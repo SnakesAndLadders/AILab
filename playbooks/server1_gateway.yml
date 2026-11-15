@@ -1,0 +1,79 @@
+---
+- name: Configure Server 1 (AI Security Gateway)
+  hosts: security_gateway
+  become: true
+  vars:
+    stack_dir: /opt/ai-security-gateway
+
+  tasks:
+    - name: Create stack directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0750"
+      loop:
+        - "{{ stack_dir }}"
+        - "{{ stack_dir }}/guardrails"
+        - "{{ stack_dir }}/litellm_data"
+
+    - name: Copy Docker Compose and LiteLLM configuration
+      copy:
+        src: "../files/server1/{{ item }}"
+        dest: "{{ stack_dir }}/{{ item }}"
+        mode: "0640"
+      loop:
+        - docker-compose.yml
+        - litellm_config.yaml
+
+    - name: Copy Guardrails AI build context
+      copy:
+        src: "../files/server1/guardrails/{{ item }}"
+        dest: "{{ stack_dir }}/guardrails/{{ item }}"
+        mode: "0640"
+      loop:
+        - Dockerfile
+        - config.py
+
+    - name: Write .env file with API keys
+      copy:
+        dest: "{{ stack_dir }}/.env"
+        mode: "0600"
+        content: |
+          LITELLM_MASTER_KEY={{ litellm_master_key }}
+          GUARDRAILS_TOKEN={{ guardrails_token }}
+          GROQ_API_KEY={{ groq_api_key }}
+          GEMINI_API_KEY={{ gemini_api_key }}
+          OPENROUTER_API_KEY={{ openrouter_api_key }}
+          MISTRAL_API_KEY={{ mistral_api_key }}
+
+    - name: Configure UFW default deny incoming
+      ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Allow SSH from LAN subnet
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        src: "{{ lan_subnet }}"
+
+    - name: Allow authorized clients to reach LiteLLM Gateway (Port 4000)
+      ufw:
+        rule: allow
+        port: "4000"
+        proto: tcp
+        src: "{{ item }}"
+      loop:
+        - "{{ win11_ip }}"
+        - "{{ server2_ip }}"
+        - "{{ openclaw_ip }}"
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    - name: Build and start Server 1 Security Gateway stack
+      command: docker compose up -d --build
+      args:
+        chdir: "{{ stack_dir }}"

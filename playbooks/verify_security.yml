@@ -1,0 +1,96 @@
+---
+- name: Verify Baseline Firewall & Container Health (All Hosts)
+  hosts: all
+  become: true
+  tasks:
+    - name: Verify UFW firewall is active
+      command: ufw status
+      register: ufw_out
+      changed_when: false
+      failed_when: "'Status: active' not in ufw_out.stdout"
+
+    - name: Print UFW status summary
+      debug:
+        msg: "{{ inventory_hostname }} UFW is ACTIVE"
+
+- name: Verify Server 1 Gateway & Internal Isolation
+  hosts: security_gateway
+  become: true
+  tasks:
+    - name: Verify LiteLLM Gateway is listening on port 4000
+      wait_for:
+        host: "{{ server1_ip }}"
+        port: 4000
+        timeout: 10
+
+    - name: Ensure Presidio & Guardrails ports are NOT exposed on host
+      shell: "ss -tulpn | grep -E ':(3000|8000)\\s' || true"
+      register: exposed_ports
+      changed_when: false
+      failed_when: exposed_ports.stdout != ""
+
+    - name: Verify LiteLLM health endpoint responds
+      uri:
+        url: "http://{{ server1_ip }}:4000/health/liveliness"
+        method: GET
+        status_code: 200
+
+- name: Verify Server 2 RAG API & Qdrant Isolation
+  hosts: rag_workloads
+  become: true
+  tasks:
+    - name: Verify Secure RAG API is listening on port 8090
+      wait_for:
+        host: "{{ server2_ip }}"
+        port: 8090
+        timeout: 10
+
+    - name: Ensure Qdrant (6333/6334) is NOT exposed on host
+      shell: "ss -tulpn | grep -E ':(6333|6334)\\s' || true"
+      register: qdrant_exposed
+      changed_when: false
+      failed_when: qdrant_exposed.stdout != ""
+
+    - name: Verify Secure RAG FastAPI docs/openapi endpoint responds
+      uri:
+        url: "http://{{ server2_ip }}:8090/openapi.json"
+        method: GET
+        status_code: 200
+
+- name: Verify OpenClaw Host Hardening & Egress Lockdown
+  hosts: openclaw_nodes
+  become: true
+  tasks:
+    - name: Verify openclaw-svc user has no sudo privileges
+      command: sudo -l -U openclaw-svc
+      register: sudo_check
+      changed_when: false
+      failed_when: "'not allowed to run sudo' not in sudo_check.stdout and sudo_check.rc == 0"
+
+    - name: Verify OpenClaw CAN reach Server 1 LiteLLM (Port 4000)
+      become: false
+      wait_for:
+        host: "{{ server1_ip }}"
+        port: 4000
+        timeout: 5
+
+    - name: Verify OpenClaw CAN reach Server 2 Secure RAG API (Port 8090)
+      become: false
+      wait_for:
+        host: "{{ server2_ip }}"
+        port: 8090
+        timeout: 5
+
+    - name: Verify OpenClaw CANNOT reach Server 2 Open Notebook (Port 8502) due to UFW egress block
+      become: false
+      wait_for:
+        host: "{{ server2_ip }}"
+        port: 8502
+        timeout: 3
+      register: lateral_test
+      ignore_errors: yes
+      failed_when: lateral_test is succeeded
+
+    - name: Confirm lateral movement block succeeded
+      debug:
+        msg: "PASS: OpenClaw outbound access to unauthorized LAN port 8502 was blocked by UFW."

@@ -1,0 +1,20 @@
+model_list:
+  # --- CHAT MODELS ---
+  - model_name: safe-chat-default
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/GROQ_API_KEY
+  - model_name: safe-chat-default
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+  - model_name: safe-chat-default
+    litellm_params:
+      model: openrouter/meta-llama/llama-3.3-70b-instruct:free
+      api_key: os.environ/OPENROUTER_API_KEY
+
+  # --- EMBEDDING MODEL FOR RAG (Zero local CPU/GPU load) ---
+  - model_name: safe-embed-default
+    litellm_params:
+      model: gemini/text-embedding-004
+      api_key: os.environ/GEMINI_API_KEY

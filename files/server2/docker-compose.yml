@@ -1,0 +1,91 @@
+name: ai-app-and-rag-workloads
+
+networks:
+  # Accessible from Windows 11, Ubuntu OpenClaw, and Server 1
+  lan_net:
+    driver: bridge
+  # Strictly internal network; Qdrant cannot be reached directly from the LAN
+  rag_internal:
+    driver: bridge
+    internal: true
+
+services:
+  # 1. Qdrant Vector Database (Rust binary—Nehalem E5520 compatible, zero AVX2 required)
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant-vectordb
+    restart: unless-stopped
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+    # No host 'ports:' exposed—only reachable via secure-rag-api on rag_internal
+    networks:
+      - rag_internal
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+
+  # 2. Firewalled RAG Ingestion & Query Service (Protects against RAG Poisoning)
+  secure-rag-api:
+    build:
+      context: ./rag-service
+      dockerfile: Dockerfile
+    container_name: secure-rag-api
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      - LITELLM_BASE_URL=http://192.168.1.10:4000
+      - LITELLM_API_KEY=${SERVER2_LITELLM_KEY}
+      - QDRANT_URL=http://qdrant:6333
+      - COLLECTION_NAME=lab_knowledge_base
+    networks:
+      - lan_net
+      - rag_internal
+    depends_on:
+      - qdrant
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # 3. Research Assistant (Open Notebook)
+  open-notebook:
+    image: lfnovo/open_notebook:latest
+    container_name: open-notebook
+    restart: unless-stopped
+    ports:
+      - "8502:8502"
+      - "5055:5055"
+    environment:
+      - OPENAI_API_KEY=${SERVER2_LITELLM_KEY}
+      - OPENAI_BASE_URL=http://192.168.1
+    volumes:
+      - ./notebook_data:/app/data
+    networks:
+      - lan_net
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+
+  # 4. Lightweight CPU Transcription (Speakr)
+  speakr:
+    image: ghcr.io/murtaza-nasir/speakr:latest
+    container_name: speakr
+    restart: unless-stopped
+    ports:
+      - "8899:8899"
+    environment:
+      - WHISPER_MODEL=base.en
+      - COMPUTE_TYPE=int8
+      - OPENAI_BASE_URL=http://192.168.1
+      - OPENAI_API_KEY=${SERVER2_LITELLM_KEY}
+    volumes:
+      - ./speakr_data:/data
+    networks:
+      - lan_net
+    deploy:
+      resources:
+        limits:
+          memory: 8G
