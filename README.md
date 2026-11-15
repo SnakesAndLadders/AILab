@@ -42,6 +42,95 @@ Security controls are continuously validated using **Promptfoo** (`promptfooconf
 2. **Ingress Injection Tests:** Confirms detection of instruction overrides, bash exfiltration payloads (`cat ~/.ssh/id_rsa`), and `\u200B` zero-width character smuggling.
 3. **RAG Poisoning Tests:** Confirms malicious documents are rejected at `:8090/ingest` while clean SOP documents are embedded and retrievable via `:8090/query`.
 
+## Deployment & Verification Guide
+
+### Prerequisites
+* **Control Node:** Linux host or Windows 11 with WSL2 (Ubuntu) running `ansible` (`>= 2.15`) and SSH key-based access to all three target nodes.
+* **Target Nodes:**
+  * **Server 1 (`192.168.1.10`):** Ubuntu Server (IBM System x3550 M2) — AI Security Gateway
+  * **Server 2 (`192.168.1.11`):** Ubuntu Server (HP ProLiant DL160 G6) — RAG & App Workloads
+  * **OpenClaw Host (`192.168.1.12`):** Ubuntu 26.04 Desktop — Isolated Agent Host
+* **API Keys:** Free-tier keys from Groq, Google AI Studio (Gemini), OpenRouter, or Mistral.
+
+---
+
+### Step 1: Configure Inventory & Secrets
+1. Clone this repository onto your Ansible control node:
+   ```bash
+   git clone https://github.com/SnakesAndLadders/AILab.git
+   cd AILab
+   ```
+2. Update `inventory.ini` with your static LAN IP addresses and SSH usernames.
+3. Edit `group_vars/all.yml` to add your upstream free-tier API keys and a strong `litellm_master_key`. *(Optional: Encrypt the file using `ansible-vault encrypt group_vars/all.yml`.)*
+4. Verify Ansible connectivity across all three nodes:
+   ```bash
+   ansible all -i inventory.ini -m ping
+   ```
+
+---
+
+### Step 2: Deploy Server 1 (AI Security Gateway)
+Deploy LiteLLM Proxy, Microsoft Presidio, Guardrails AI, and UFW rules on Server 1 first so you can generate scoped virtual keys for downstream hosts:
+```bash
+ansible-playbook -i inventory.ini playbooks/site.yml --limit security_gateway --ask-become-pass
+```
+
+---
+
+### Step 3: Issue Scoped Virtual API Keys
+Generate isolated, rate-limited virtual keys via LiteLLM's `/key/generate` endpoint so no single client can exhaust free-tier quotas or bypass governance:
+
+1. **Generate Key for Server 2 (RAG Embeddings & Workloads):**
+   ```bash
+   curl -X POST 'http://192.168.1' \
+     -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
+     -H 'Content-Type: application/json' \
+     -d '{"key_alias": "server2-rag-apps", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 30}'
+   ```
+2. **Generate Key for Ubuntu 26.04 OpenClaw Host (Strict RPM Cap):**
+   ```bash
+   curl -X POST 'http://192.168.1' \
+     -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
+     -H 'Content-Type: application/json' \
+     -d '{"key_alias": "ubuntu-openclaw", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 10}'
+   ```
+3. **Generate Key for Windows 11 Workstation (OpenCode & Promptfoo):**
+   ```bash
+   curl -X POST 'http://192.168.1' \
+     -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
+     -H 'Content-Type: application/json' \
+     -d '{"key_alias": "win11-opencode", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 30}'
+   ```
+4. Paste the generated keys for `server2_litellm_key` and `openclaw_litellm_key` into `group_vars/all.yml`.
+
+---
+
+### Step 4: Deploy Server 2 & Harden the OpenClaw Host
+Run the full playbook to stand up Qdrant, the Secure RAG API, Open Notebook, and Speakr on Server 2, while locking down the Ubuntu 26.04 OpenClaw host (`openclaw-svc` account, `systemd` sandboxing, UFW egress rules, and `safe_ingest.py`):
+```bash
+ansible-playbook -i inventory.ini playbooks/site.yml --ask-become-pass
+```
+
+---
+
+### Step 5: Run Automated Security & Compliance Checks
+Execute the verification playbook to confirm UFW rules are active, internal containers (`Presidio`, `Guardrails AI`, `Qdrant`) have zero exposed host ports, lateral movement from OpenClaw is blocked, and `safe_ingest.py` rejects prompt injections:
+```bash
+ansible-playbook -i inventory.ini playbooks/verify_security.yml --ask-become-pass
+```
+
+---
+
+### Step 6: Execute Promptfoo Red-Team Evaluation (Windows 11)
+From your Windows 11 workstation, run the automated red-team suite against both the LiteLLM Gateway (`:4000`) and Secure RAG Ingestion API (`:8090`):
+```powershell
+npm install -g promptfoo
+\$env:LITELLM_TEST_KEY="<YOUR_WIN11_VIRTUAL_KEY>"
+promptfoo eval -c redteam/promptfooconfig.yaml
+promptfoo view
+```
+
+
 ## Engineering Lessons Learned (Legacy Hardware Constraints)
 Deploying modern AI security tooling on 2009 Intel Xeon E5520 (Nehalem) CPUs without AVX/AVX2 instructions required avoiding AVX2-compiled PyTorch/ONNX wheels. Instead, this architecture pairs compiled Rust/Go binaries (**Qdrant**) with deterministic/regex/NFKC Unicode validators (**Guardrails AI** + **Presidio**) and offloads heavy transformer inference and embeddings to rate-limited cloud endpoints behind a strict local DLP perimeter.
 
