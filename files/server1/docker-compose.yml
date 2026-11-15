@@ -1,0 +1,78 @@
+name: ai-security-gateway
+
+networks:
+  # Accessible by Windows 11, Ubuntu OpenClaw, and Server 2
+  lan_ingress:
+    driver: bridge
+  # Strictly internal network; scanners are unreachable directly from LAN
+  secure_egress:
+    driver: bridge
+    internal: true
+
+services:
+  # 1. LiteLLM Enterprise AI Gateway (Single Entrypoint for All Clients)
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    container_name: litellm-gateway
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      - PRESIDIO_ANALYZER_API_BASE=http://presidio-analyzer:3000
+      - PRESIDIO_ANONYMIZER_API_BASE=http://presidio-anonymizer:3000
+    volumes:
+      - ./litellm_config.yaml:/app/config.yaml:ro
+      - ./litellm_data:/app/data
+    command: ["--config", "/app/config.yaml", "--port", "4000", "--detailed_debug"]
+    networks:
+      - lan_ingress
+      - secure_egress
+    depends_on:
+      - presidio-analyzer
+      - presidio-anonymizer
+      - guardrails-server
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  # 2. Outgoing PII & Secret Redactor (Microsoft Presidio)
+  presidio-analyzer:
+    image: ://microsoft.com
+    container_name: presidio-analyzer
+    restart: unless-stopped
+    networks:
+      - secure_egress
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+  presidio-anonymizer:
+    image: ://microsoft.com
+    container_name: presidio-anonymizer
+    restart: unless-stopped
+    networks:
+      - secure_egress
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+
+  # 3. Incoming Prompt Injection & Toxicity Validator (Guardrails AI)
+  guardrails-server:
+    build:
+      context: ./guardrails
+      dockerfile: Dockerfile
+    container_name: guardrails-server
+    restart: unless-stopped
+    environment:
+      - GUARDRAILS_TOKEN=${GUARDRAILS_TOKEN}
+    networks:
+      - secure_egress
+    deploy:
+      resources:
+        limits:
+          memory: 6G

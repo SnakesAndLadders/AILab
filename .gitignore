@@ -1,0 +1,17 @@
+# Secrets & Environment Files
+.env
+*.env
+group_vars/all.yml
+
+# Runtime Docker Volumes & Databases
+**/litellm_data/
+**/qdrant_storage/
+**/notebook_data/
+**/speakr_data/
+*.db
+*.sqlite
+
+# Python & Promptfoo Artifacts
+__pycache__/
+*.pyc
+.promptfoo/
