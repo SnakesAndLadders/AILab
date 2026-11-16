@@ -4,18 +4,20 @@ An enterprise-inspired, self-hosted AI security architecture designed to enforce
 
 ## Architecture Overview
 
-This lab separates security enforcement from application workloads across two bare-metal servers without GPUs:
+This lab repurposes two energy-efficient, AVX2-capable Kaby Lake laptops (~15W–30W TDP) with built-in battery backup as dedicated bare-metal security and RAG nodes, managed declaratively via Ansible:
 
-* **Server 1 - AI Security Gateway (`IBM System x3550 M2` | Dual Xeon E5520 | 36 GB RAM):**
-  * **LiteLLM Proxy (Port `4000`):** Unified OpenAI-compatible control plane issuing scoped virtual API keys, per-client RPM rate limits, and automatic fallback routing across free-tier LLM and embedding providers.
-  * **Microsoft Presidio (`pre_call` Egress Hook):** Scans outgoing prompts and code snippets for PII (`US_SSN`, `CREDIT_CARD`, `EMAIL_ADDRESS`) and hardcoded secrets (`AWS_ACCESS_KEY`), masking or blocking sensitive data before it leaves the local network.
-  * **Guardrails AI (`pre_call` & Standalone Validation):** Custom CPU-safe Python validator (`nehalem-safe-shield`) blocking direct/indirect prompt injections, agent command hijacking, homoglyph attacks, and zero-width Unicode smuggling.
-  * **Network Isolation:** Presidio and Guardrails AI reside on an `internal: true` Docker bridge (`secure_egress`), making it impossible for LAN clients to bypass the LiteLLM control plane.
+* **Server 1 — AI Security Gateway (`Dell Latitude 7480` | Intel Core i5-7300U | 16 GB RAM):**
+  * **LiteLLM Proxy (`2.5G` cap | Port `4000`):** Unified OpenAI-compatible control plane issuing scoped virtual API keys, per-client RPM rate limits, and automatic fallback routing across free-tier LLM and embedding providers.
+  * **Microsoft Presidio (`3.5G` combined cap):** Scans outgoing prompts and code snippets (`pre_call`) for PII (`US_SSN`, `CREDIT_CARD`, `EMAIL_ADDRESS`) and hardcoded secrets (`AWS_ACCESS_KEY`), masking or blocking sensitive data before egress.
+  * **Guardrails AI Two-Stage Hybrid Shield (`3.5G` cap):**
+    * **Stage 1 (Deterministic Pre-Filter, `<1 ms`):** Strips and blocks zero-width Unicode smuggling (`\u200B`), normalizes homoglyphs (`NFKC`), and drops high-confidence shell-hijacking signatures before invoking neural inference.
+    * **Stage 2 (Local ONNX DeBERTa-v3 Classifier, `~45 ms`):** Runs a pre-baked `optimum[onnxruntime]` export of `protectai/deberta-v3-base-prompt-injection-v2` on AVX2 CPU cores to catch paraphrased semantic injections that contain zero static regex keywords.
 
-* **Server 2 - Workloads & Firewalled RAG (`HP ProLiant DL160 G6` | Dual Xeon E5520 | 36 GB RAM):**
-  * **Secure RAG API (Port `8090`):** FastAPI ingestion and retrieval gateway that validates all incoming documents against Server 1's Guardrails AI shield *before* generating embeddings or writing vectors.
-  * **Qdrant Vector Database:** Isolated inside an `internal: true` Docker network (`rag_internal`) so untrusted pipelines cannot inject poisoned embeddings directly.
-  * **Open Notebook & Speakr:** Research and `int8` CPU Whisper transcription workloads routed strictly through Server 1's egress proxy.
+* **Server 2 — Workloads & Firewalled RAG (`Lenovo Ideapad 130-15IKB` | Intel Core i7-8550U 8-Thread | 12 GB RAM):**
+  * **Secure RAG API (`1G` cap | Port `8090`):** FastAPI ingestion and retrieval gateway that validates incoming documents against Server 1's two-stage Guardrails AI shield *before* generating embeddings or writing vectors.
+  * **Qdrant Vector Database (`2G` cap):** Isolated inside an `internal: true` Docker network (`rag_internal`) so untrusted pipelines cannot inject poisoned embeddings directly.
+  * **Open Notebook (`2.5G` cap | Port `8502`) & Speakr (`3G` cap | Port `8899`):** Research and 8-thread `int8` CPU Whisper transcription workloads routed strictly through Server 1's egress proxy.
+
 
 * **Client Tier:**
   * **Windows 11 Workstation:** VSCode + OpenCode routed to LiteLLM (`:4000`) and Secure RAG (`:8090`) using a scoped developer virtual key.
@@ -28,10 +30,11 @@ This lab separates security enforcement from application workloads across two ba
 | Threat Vector | Attack Scenario | Control Implemented |
 | :--- | :--- | :--- |
 | **Sensitive Data Egress** | Developer pastes `.env` secrets or customer PII into coding assistant | Presidio `pre_call` hook blocks SSNs/AWS keys and masks emails/cards before upstream API calls |
-| **Indirect Prompt Injection** | Scraped webpage or webhook contains hidden `[SYSTEM]` instructions targeting OpenClaw | Standalone `/guardrails/apply_guardrail` inspection + zero-width Unicode stripping |
-| **RAG Knowledge Poisoning** | Malicious document injected into vector DB to hijack future agent queries | `/ingest` endpoint enforces Guardrails AI validation prior to Qdrant vector upsert |
+| **Obfuscated & Signature Injections** | Scraped page hides `[SYSTEM]` commands or `\u200B` zero-width smuggling | Guardrails Stage 1 normalizes Unicode (`NFKC`) and blocks known hijacking signatures in `<1 ms` |
+| **Paraphrased Semantic Injections** | Attacker uses polite, synonym-heavy phrasing to bypass static regex rules | Guardrails Stage 2 local ONNX `deberta-v3` classifier scores semantic intent (`threshold >= 0.85`) |
+| **RAG Knowledge Poisoning** | Malicious document injected into vector DB to hijack future agent queries | `/ingest` endpoint enforces two-stage Guardrails AI validation prior to Qdrant vector upsert |
 | **Runaway Agent / Quota Exhaustion** | Autonomous agent enters an infinite tool-calling loop | LiteLLM virtual keys enforce per-client `rpm_limit` isolation |
-| **Host Lateral Movement** | Compromised agent attempts to access primary workstation SSH keys or repos | OpenClaw isolated on dedicated Ubuntu 26.04 host with UFW egress restrictions |
+| **Host Lateral Movement** | Compromised agent attempts to access primary workstation SSH keys or repos | OpenClaw isolated on dedicated Ubuntu 26.04 host with `systemd` sandboxing & UFW egress blocks |
 
 ---
 
@@ -45,12 +48,51 @@ Security controls are continuously validated using **Promptfoo** (`promptfooconf
 ## Deployment & Verification Guide
 
 ### Prerequisites
-* **Control Node:** Linux host or Windows 11 with WSL2 (Ubuntu) running `ansible` (`>= 2.15`) and SSH key-based access to all three target nodes.
+* **Control Node:** Linux host or Windows 11 with WSL2 (Ubuntu) running `ansible` (`>= 2.15`) and SSH key-based access to all three target nodes. IPs are just placeholders, use whatever you like.
 * **Target Nodes:**
-  * **Server 1 (`192.168.1.10`):** Ubuntu Server (IBM System x3550 M2) — AI Security Gateway
-  * **Server 2 (`192.168.1.11`):** Ubuntu Server (HP ProLiant DL160 G6) — RAG & App Workloads
+  * **Server 1 (`192.168.1.10`):** - AI Security Gateway
+  * **Server 2 (`192.168.1.11`):** - RAG & App Workloads
   * **OpenClaw Host (`192.168.1.12`):** Ubuntu 26.04 Desktop — Isolated Agent Host
 * **API Keys:** Free-tier keys from Groq, Google AI Studio (Gemini), OpenRouter, or Mistral.
+
+### Installing Ansible (Control Node Setup)
+
+Ansible must run on a Linux control node. If your primary workstation is **Windows 11**, install **WSL2 (Ubuntu)** first, then install Ansible inside the Ubuntu terminal.
+
+#### 1. Windows 11: Install WSL2 & Ubuntu (Skip if already on Linux)
+Open **PowerShell as Administrator** and run:
+```powershell
+wsl --install -d Ubuntu
+```
+Reboot your computer if prompted, launch **Ubuntu** from the Start Menu, and create your Linux username and password.
+
+#### 2. Install Ansible & Required Collections (Ubuntu / WSL2)
+Inside your Ubuntu terminal, install Ansible using the official PPA and add the `community.general` collection (required for managing UFW firewall rules):
+
+```bash
+sudo apt update
+sudo apt install -y software-properties-common sshpass
+sudo add-apt-repository --yes --update ppa:ansible/ansible
+sudo apt install -y ansible
+
+# Install community.general collection for the UFW firewall module
+ansible-galaxy collection install community.general
+```
+
+#### 3. Verify Installation & Configure SSH Keys
+Confirm Ansible is installed and generate an SSH keypair so Ansible can connect to Server 1, Server 2, and your OpenClaw host without password prompts:
+
+```bash
+ansible --version
+
+# Generate an Ed25519 SSH key (press Enter to accept default path)
+ssh-keygen -t ed25519 -C "ansible-control-node"
+
+# Copy your public key to all three target hosts
+ssh-copy-id ubuntu@192.168.1.10
+ssh-copy-id ubuntu@192.168.1.11
+ssh-copy-id ubuntu@192.168.1.12
+```
 
 ---
 
@@ -82,21 +124,21 @@ Generate isolated, rate-limited virtual keys via LiteLLM's `/key/generate` endpo
 
 1. **Generate Key for Server 2 (RAG Embeddings & Workloads):**
    ```bash
-   curl -X POST 'http://192.168.1' \
+   curl -X POST 'http://[Security Gateway IP]' \
      -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
      -H 'Content-Type: application/json' \
      -d '{"key_alias": "server2-rag-apps", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 30}'
    ```
 2. **Generate Key for Ubuntu 26.04 OpenClaw Host (Strict RPM Cap):**
    ```bash
-   curl -X POST 'http://192.168.1' \
+   curl -X POST 'http://[Security Gateway IP]' \
      -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
      -H 'Content-Type: application/json' \
      -d '{"key_alias": "ubuntu-openclaw", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 10}'
    ```
 3. **Generate Key for Windows 11 Workstation (OpenCode & Promptfoo):**
    ```bash
-   curl -X POST 'http://192.168.1' \
+   curl -X POST 'http://[Security Gateway IP]' \
      -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
      -H 'Content-Type: application/json' \
      -d '{"key_alias": "win11-opencode", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 30}'
@@ -122,19 +164,55 @@ ansible-playbook -i inventory.ini playbooks/verify_security.yml --ask-become-pas
 ---
 
 ### Step 6: Execute Promptfoo Red-Team Evaluation (Windows 11)
-From your Windows 11 workstation, run the automated red-team suite against both the LiteLLM Gateway (`:4000`) and Secure RAG Ingestion API (`:8090`):
+### Windows 11 Control Node
+Run the automated red-team suite against both the LiteLLM Gateway (`:4000`) and Secure RAG Ingestion API (`:8090`):
 ```powershell
 npm install -g promptfoo
 \$env:LITELLM_TEST_KEY="<YOUR_WIN11_VIRTUAL_KEY>"
 promptfoo eval -c redteam/promptfooconfig.yaml
 promptfoo view
 ```
+### Linux or WSL2 Control Node 
+allows you to execute your automated red-team suite directly alongside your Ansible playbooks.
 
+#### 1. Install Node.js (v20+) & Promptfoo
+If Node.js is not already installed on your control node, install the NodeSource LTS release and Promptfoo globally:
+
+```bash
+# Install Node.js 20.x LTS
+curl -fsSL https://nodesource.com | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Install Promptfoo CLI
+sudo npm install -g promptfoo
+
+# Verify installation
+promptfoo --version
+```
+
+#### 2. Run the Automated Security Benchmark
+Export your Windows 11 / Control Node LiteLLM virtual key and run the evaluation against both Server 1 (`:4000`) and Server 2 (`:8090`):
+
+```bash
+cd ~/ai-security-ansible
+export LITELLM_TEST_KEY="<YOUR_WIN11_VIRTUAL_KEY>"
+
+# Execute all Egress DLP, Ingress Injection, and RAG Poisoning tests
+promptfoo eval -c redteam/promptfooconfig.yaml
+```
+
+#### 3. Inspect the Results Dashboard
+Launch the local web viewer to inspect pass/fail assertions, latency metrics, and masked payloads:
+
+```bash
+promptfoo view
+```
+> [!TIP] 
+> *(If running inside WSL2 on Windows 11, open the `http://localhost:15500` link printed in your terminal directly in your Windows browser. If running on a headless remote Linux server, forward the port via SSH using `ssh -L 15500:localhost:15500 user@<CONTROL_NODE_IP>`.)*
 
 ## Engineering Lessons Learned (Legacy Hardware Constraints)
-Deploying modern AI security tooling on 2009 Intel Xeon E5520 (Nehalem) CPUs without AVX/AVX2 instructions required avoiding AVX2-compiled PyTorch/ONNX wheels. Instead, this architecture pairs compiled Rust/Go binaries (**Qdrant**) with deterministic/regex/NFKC Unicode validators (**Guardrails AI** + **Presidio**) and offloads heavy transformer inference and embeddings to rate-limited cloud endpoints behind a strict local DLP perimeter.
+Deploying modern AI security tooling on 2009 Intel Xeon E5520 (Nehalem) CPUs without AVX/AVX2 instructions required avoiding AVX2-compiled PyTorch/ONNX wheels. Instead, this architecture pairs compiled Rust/Go binaries (**[Qdrant](https://qdrant.tech/)** with deterministic/regex/NFKC Unicode validators (**[Guardrails AI](https://guardrailsai.com/hub)** + **[Presidio](https://presidio.dataprivacystack.org/)**) and offloads heavy transformer inference and embeddings to rate-limited cloud endpoints behind a strict local [DLP perimeter](https://nhimg.org/glossary/perimeter-era-dlp/). 
 
-```mermaid
 flowchart LR
     %% Styling
     classDef client fill:#f3f6fa,stroke:#2b579a,stroke-width:2px,color:#111
@@ -147,7 +225,7 @@ flowchart LR
         direction TB
         subgraph WIN11["Windows 11 Workstation (192.168.1.20)"]
             OPENCODE["VSCode + OpenCode"]
-            PROMPTFOO["Promptfoo Red-Team Suite"]
+            PROMPTFOO["Promptfoo Red-Team Suite<br/>(Regex + Semantic ML Probes)"]
         end
 
         EXT_DATA["External Untrusted Data<br/>(Webhooks / Scraped Pages)"]
@@ -159,27 +237,27 @@ flowchart LR
         end
     end
 
-    %% Server 1
-    subgraph SERVER1["Server 1: IBM System x3550 M2 (192.168.1.10) - AI Security Gateway"]
+    %% Server 1 (Dell Latitude 7480)
+    subgraph SERVER1["Server 1: Dell Latitude 7480 (192.168.1.10) - i5-7300U | 16GB RAM"]
         direction TB
         subgraph S1_LAN["Network Zone 1: lan_ingress"]
             LITELLM["LiteLLM Proxy (Port 4000)<br/>Virtual Keys & RPM Rate Limits"]
         end
         subgraph S1_SEC["Network Zone 2: secure_egress (Internal Only)"]
             PRESIDIO["Microsoft Presidio<br/>(pre_call PII & Secret Redaction)"]
-            GUARDRAILS["Guardrails AI<br/>(nehalem-safe-shield: Injection & Unicode)"]
+            GUARDRAILS["Guardrails AI Hybrid Shield<br/>Stage 1: Unicode & Regex (<1ms)<br/>Stage 2: ONNX DeBERTa-v3 ML (~45ms)"]
         end
         LITELLM <-->|"pre_call Scrubbing"| PRESIDIO
         LITELLM <-->|"pre_call & Standalone"| GUARDRAILS
     end
 
-    %% Server 2
-    subgraph SERVER2["Server 2: HP ProLiant DL160 G6 (192.168.1.11) - Workloads & Firewalled RAG"]
+    %% Server 2 (Lenovo Ideapad 130-15IKB)
+    subgraph SERVER2["Server 2: Lenovo Ideapad 130-15IKB (192.168.1.11) - i7-8550U | 12GB RAM"]
         direction TB
         subgraph S2_LAN["Network Zone 1: lan_net"]
             RAG_API["Secure RAG API (Port 8090)"]
             NOTEBOOK["Open Notebook (Port 8502)"]
-            SPEAKR["Speakr CPU Whisper (Port 8899)"]
+            SPEAKR["Speakr Whisper int8 (Port 8899)"]
         end
         subgraph S2_RAG["Network Zone 2: rag_internal (Internal Only)"]
             QDRANT["Qdrant Vector DB (Port 6333)"]
@@ -197,7 +275,7 @@ flowchart LR
     PROMPTFOO -.->|"Poisoning Tests (:8090/ingest)"| RAG_API
 
     EXT_DATA -->|"Untrusted Input"| SAFE_INGEST
-    SAFE_INGEST -->|"Validate (:4000/apply_guardrail)"| LITELLM
+    SAFE_INGEST -->|"Two-Stage Scan (:4000/apply_guardrail)"| LITELLM
     SAFE_INGEST -->|"Ingest Clean (:8090/ingest)"| RAG_API
     OPENCLAW -->|"Scoped Chat & RAG Queries"| LITELLM
     OPENCLAW -->|"Context Retrieval (:8090/query)"| RAG_API
@@ -213,4 +291,4 @@ flowchart LR
     class LITELLM,RAG_API,NOTEBOOK,SPEAKR gateway
     class PRESIDIO,GUARDRAILS,QDRANT isolated
     class EXT_DATA,CLOUD external
-```
+

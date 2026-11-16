@@ -1,5 +1,5 @@
 ---
-- name: Baseline Docker & Security Setup on Servers 1 and 2
+- name: Baseline Laptop Tuning, Swap, Docker & Security Setup
   hosts: security_gateway:rag_workloads
   become: true
   tasks:
@@ -14,6 +14,46 @@
         state: present
         update_cache: yes
 
+    # --- LAPTOP SERVER TUNING (16GB / 12GB RAM Safety & Lid-Close Keepalive) ---
+    - name: Create 4GB swapfile for memory spike protection
+      command: fallocate -l 4G /swapfile
+      args:
+        creates: /swapfile
+
+    - name: Set permissions on swapfile
+      file:
+        path: /swapfile
+        mode: "0600"
+
+    - name: Format swapfile if not already formatted
+      command: mkswap /swapfile
+      register: mkswap_out
+      changed_when: "'Setting up swapspace' in mkswap_out.stdout"
+      failed_when: false
+
+    - name: Enable swapfile in fstab and activate
+      mount:
+        name: none
+        src: /swapfile
+        fstype: swap
+        opts: sw
+        passno: "0"
+        dump: "0"
+        state: present
+      notify: Activate swap
+
+    - name: Prevent laptop suspend when lid is closed
+      lineinfile:
+        path: /etc/systemd/logind.conf
+        regexp: "^#?{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+      loop:
+        - { key: "HandleLidSwitch", value: "ignore" }
+        - { key: "HandleLidSwitchExternalPower", value: "ignore" }
+        - { key: "HandleLidSwitchDocked", value: "ignore" }
+      notify: Restart systemd-logind
+
+    # --- DOCKER ENGINE INSTALLATION ---
     - name: Create Docker apt keyring directory
       file:
         path: /etc/apt/keyrings
@@ -46,6 +86,15 @@
         name: docker
         enabled: yes
         state: started
+
+  handlers:
+    - name: Activate swap
+      command: swapon -a
+
+    - name: Restart systemd-logind
+      systemd:
+        name: systemd-logind
+        state: restarted
 
 - import_playbook: server1_gateway.yml
 - import_playbook: server2_rag.yml

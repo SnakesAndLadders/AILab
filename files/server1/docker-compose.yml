@@ -1,16 +1,13 @@
 name: ai-security-gateway
 
 networks:
-  # Accessible by Windows 11, Ubuntu OpenClaw, and Server 2
   lan_ingress:
     driver: bridge
-  # Strictly internal network; scanners are unreachable directly from LAN
   secure_egress:
     driver: bridge
     internal: true
 
 services:
-  # 1. LiteLLM Enterprise AI Gateway (Single Entrypoint for All Clients)
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     container_name: litellm-gateway
@@ -36,9 +33,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 2.5G
 
-  # 2. Outgoing PII & Secret Redactor (Microsoft Presidio)
   presidio-analyzer:
     image: ://microsoft.com
     container_name: presidio-analyzer
@@ -48,7 +44,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          memory: 2.5G
 
   presidio-anonymizer:
     image: ://microsoft.com
@@ -59,9 +55,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
+          memory: 1G
 
-  # 3. Incoming Prompt Injection & Toxicity Validator (Guardrails AI)
   guardrails-server:
     build:
       context: ./guardrails
@@ -75,4 +70,4 @@ services:
     deploy:
       resources:
         limits:
-          memory: 6G
+          memory: 3.5G
