@@ -9,28 +9,40 @@ An enterprise-inspired, self-hosted AI security architecture enforcing **bi-dire
 This lab separates security enforcement from application workloads across two energy-efficient, AVX2-capable Kaby Lake laptops (~15W–30W TDP with built-in battery backup), orchestrated declaratively with **Ansible** and **Docker Compose**:
 
 ```mermaid
+---
+config:
+  theme: redux-color 
+  layout: dagre
+  look: classic
+  lineColor: #f4f4f44d
+    
+---
 flowchart LR
     %% Styling
     classDef client fill:#f3f6fa,stroke:#2b579a,stroke-width:2px,color:#111
     classDef gateway fill:#eef7f2,stroke:#1e7e34,stroke-width:2px,color:#111
-    classDef isolated fill:#fff5f5,stroke:#c53030,stroke-width:2px,stroke-dasharray: 5 5,color:#111
+    classDef isolated fill:#fff5f5,stroke:#c53030,stroke-width:2px,stroke-dasharray: 5 5,color:#ffo
     classDef external fill:#f8f9fa,stroke:#4a5568,stroke-width:2px,color:#111
+	
 
     %% Client Tier
     subgraph CLIENTS["Workstation & External Data"]
         direction TB
         subgraph WIN11["Windows 11 Workstation (192.168.1.20)"]
             OPENCODE["VSCode + OpenCode"]
+            OPENCODE@{ shape: console}
             PROMPTFOO["Promptfoo Red-Team Suite<br/>(Regex + Semantic ML Probes)"]
+            PROMPTFOO@{ shape: console}
         end
         EXT_DATA["External Untrusted Data<br/>(Webhooks / Scraped Pages)"]
+        EXT_DATA@{ shape: cloud }
     end
 
     %% Server 1 (Dell Latitude 7480)
     subgraph SERVER1["Server 1: Dell Latitude 7480 (192.168.1.10) - i5-7300U | 16GB RAM"]
         direction TB
         subgraph S1_LAN["Zone 1: lan_ingress"]
-            LITELLM["LiteLLM Proxy (Port 4000)<br/>Virtual Keys & RPM Rate Limits"]
+            LITELLM(("LiteLLM Proxy (Port 4000)<br/>Virtual Keys & RPM Rate Limits"))
         end
         subgraph S1_SEC["Zone 2: secure_egress (Internal Only)"]
             PRESIDIO["Microsoft Presidio<br/>(pre_call PII & Secret Redaction)"]
@@ -38,7 +50,9 @@ flowchart LR
         end
         subgraph S1_OC["Zone 3: openclaw_net (Hardened Container: cap_drop ALL, read_only)"]
             SAFE_INGEST["safe_ingest.py (Air-Lock)"]
+            SAFE_INGEST@{ shape: lean-r}
             OPENCLAW["OpenClaw Agent (Port 18789)"]
+            OPENCLAW@{ shape: lean-r}
             SAFE_INGEST -->|"Bounded XML Text"| OPENCLAW
         end
         LITELLM <-->|"pre_call Scrubbing"| PRESIDIO
@@ -56,13 +70,15 @@ flowchart LR
             SPEAKR["Speakr Whisper int8 (Port 8899)"]
         end
         subgraph S2_RAG["Zone 2: rag_internal (Internal Only)"]
-            QDRANT["Qdrant Vector DB (Port 6333)"]
+            QDRANT[("Qdrant Vector DB (Port 6333)")]
         end
         RAG_API <-->|"Store/Retrieve Clean Vectors"| QDRANT
     end
 
     %% External Cloud
+    
     CLOUD["Public Free-Tier LLMs & Embeddings<br/>(Groq, Gemini, OpenRouter, Mistral)"]
+    CLOUD@{ shape: cloud }
 
     %% Traffic Flows
     OPENCODE -->|"Sanitized Prompts (:4000/v1)"| LITELLM
