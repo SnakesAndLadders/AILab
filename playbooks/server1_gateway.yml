@@ -25,6 +25,17 @@
         - docker-compose.yml
         - litellm_config.yaml
 
+    - name: Create scoped OpenClaw workspace and state directories owned by non-root UID 1000
+      file:
+        path: "{{ stack_dir }}/{{ item }}"
+        state: directory
+        owner: "1000"
+        group: "1000"
+        mode: "0750"
+      loop:
+        - openclaw_workspace
+        - openclaw_data
+
     - name: Copy Guardrails AI build context
       copy:
         src: "../files/server1/guardrails/{{ item }}"

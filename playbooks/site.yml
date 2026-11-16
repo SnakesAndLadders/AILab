@@ -98,4 +98,3 @@
 
 - import_playbook: server1_gateway.yml
 - import_playbook: server2_rag.yml
-- import_playbook: openclaw_host.yml

@@ -213,6 +213,7 @@ promptfoo view
 ## Engineering Lessons Learned (Legacy Hardware Constraints)
 Deploying modern AI security tooling on 2009 Intel Xeon E5520 (Nehalem) CPUs without AVX/AVX2 instructions required avoiding AVX2-compiled PyTorch/ONNX wheels. Instead, this architecture pairs compiled Rust/Go binaries (**[Qdrant](https://qdrant.tech/)** with deterministic/regex/NFKC Unicode validators (**[Guardrails AI](https://guardrailsai.com/hub)** + **[Presidio](https://presidio.dataprivacystack.org/)**) and offloads heavy transformer inference and embeddings to rate-limited cloud endpoints behind a strict local [DLP perimeter](https://nhimg.org/glossary/perimeter-era-dlp/). 
 
+``` mermaid 
 flowchart LR
     %% Styling
     classDef client fill:#f3f6fa,stroke:#2b579a,stroke-width:2px,color:#111
@@ -221,45 +222,45 @@ flowchart LR
     classDef external fill:#f8f9fa,stroke:#4a5568,stroke-width:2px,color:#111
 
     %% Client Tier
-    subgraph CLIENTS["Client Tier & External Data"]
+    subgraph CLIENTS["Workstation & External Data"]
         direction TB
         subgraph WIN11["Windows 11 Workstation (192.168.1.20)"]
             OPENCODE["VSCode + OpenCode"]
             PROMPTFOO["Promptfoo Red-Team Suite<br/>(Regex + Semantic ML Probes)"]
         end
-
         EXT_DATA["External Untrusted Data<br/>(Webhooks / Scraped Pages)"]
-
-        subgraph UBUNTU["Ubuntu 26.04 Desktop (192.168.1.12)<br/>[UFW Egress Lockdown]"]
-            SAFE_INGEST["safe_ingest.py<br/>(Air-Lock Wrapper | openclaw-svc)"]
-            OPENCLAW["OpenClaw Agent<br/>(Systemd Sandboxed)"]
-            SAFE_INGEST -->|"Bounded XML Text"| OPENCLAW
-        end
     end
 
     %% Server 1 (Dell Latitude 7480)
     subgraph SERVER1["Server 1: Dell Latitude 7480 (192.168.1.10) - i5-7300U | 16GB RAM"]
         direction TB
-        subgraph S1_LAN["Network Zone 1: lan_ingress"]
+        subgraph S1_LAN["Zone 1: lan_ingress"]
             LITELLM["LiteLLM Proxy (Port 4000)<br/>Virtual Keys & RPM Rate Limits"]
         end
-        subgraph S1_SEC["Network Zone 2: secure_egress (Internal Only)"]
+        subgraph S1_SEC["Zone 2: secure_egress (Internal Only)"]
             PRESIDIO["Microsoft Presidio<br/>(pre_call PII & Secret Redaction)"]
             GUARDRAILS["Guardrails AI Hybrid Shield<br/>Stage 1: Unicode & Regex (<1ms)<br/>Stage 2: ONNX DeBERTa-v3 ML (~45ms)"]
         end
+        subgraph S1_OC["Zone 3: openclaw_net (Hardened Container: cap_drop ALL, read_only)"]
+            SAFE_INGEST["safe_ingest.py (Air-Lock)"]
+            OPENCLAW["OpenClaw Agent (Port 18789)"]
+            SAFE_INGEST -->|"Bounded XML Text"| OPENCLAW
+        end
         LITELLM <-->|"pre_call Scrubbing"| PRESIDIO
         LITELLM <-->|"pre_call & Standalone"| GUARDRAILS
+        SAFE_INGEST -->|"Two-Stage Scan (:4000)"| LITELLM
+        OPENCLAW -->|"Scoped Chat (:4000/v1)"| LITELLM
     end
 
     %% Server 2 (Lenovo Ideapad 130-15IKB)
     subgraph SERVER2["Server 2: Lenovo Ideapad 130-15IKB (192.168.1.11) - i7-8550U | 12GB RAM"]
         direction TB
-        subgraph S2_LAN["Network Zone 1: lan_net"]
+        subgraph S2_LAN["Zone 1: lan_net"]
             RAG_API["Secure RAG API (Port 8090)"]
             NOTEBOOK["Open Notebook (Port 8502)"]
             SPEAKR["Speakr Whisper int8 (Port 8899)"]
         end
-        subgraph S2_RAG["Network Zone 2: rag_internal (Internal Only)"]
+        subgraph S2_RAG["Zone 2: rag_internal (Internal Only)"]
             QDRANT["Qdrant Vector DB (Port 6333)"]
         end
         RAG_API <-->|"Store/Retrieve Clean Vectors"| QDRANT
@@ -275,9 +276,7 @@ flowchart LR
     PROMPTFOO -.->|"Poisoning Tests (:8090/ingest)"| RAG_API
 
     EXT_DATA -->|"Untrusted Input"| SAFE_INGEST
-    SAFE_INGEST -->|"Two-Stage Scan (:4000/apply_guardrail)"| LITELLM
     SAFE_INGEST -->|"Ingest Clean (:8090/ingest)"| RAG_API
-    OPENCLAW -->|"Scoped Chat & RAG Queries"| LITELLM
     OPENCLAW -->|"Context Retrieval (:8090/query)"| RAG_API
 
     RAG_API -->|"Validate & Embed (:4000)"| LITELLM
@@ -287,8 +286,8 @@ flowchart LR
     LITELLM -->|"Sanitized Prompts & Embeddings"| CLOUD
 
     %% Apply Classes
-    class OPENCODE,PROMPTFOO,SAFE_INGEST,OPENCLAW client
+    class OPENCODE,PROMPTFOO client
     class LITELLM,RAG_API,NOTEBOOK,SPEAKR gateway
-    class PRESIDIO,GUARDRAILS,QDRANT isolated
+    class PRESIDIO,GUARDRAILS,QDRANT,SAFE_INGEST,OPENCLAW isolated
     class EXT_DATA,CLOUD external
-
+```
