@@ -12,7 +12,7 @@ LITELLM_BASE_URL = os.getenv("LITELLM_BASE_URL", "http://192.168.1.10:4000")
 LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "")
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "lab_knowledge_base")
-VECTOR_SIZE = 768  # Matches Gemini text-embedding-004 output dimensions
+VECTOR_SIZE = 768
 
 qdrant = QdrantClient(url=QDRANT_URL)
 
@@ -44,13 +44,12 @@ async def get_embedding(client: httpx.AsyncClient, text: str) -> list[float]:
         timeout=30.0,
     )
     resp.raise_for_status()
-    return resp.json()["data"][0]["embedding"]
+    return resp.json()["data"]["embedding"]
 
 
 @app.post("/ingest")
 async def ingest_document(req: IngestRequest):
     async with httpx.AsyncClient() as client:
-        # 1. Defense against RAG Poisoning: Validate text via Server 1 Guardrails AI first
         guard_resp = await client.post(
             f"{LITELLM_BASE_URL}/guardrails/apply_guardrail",
             headers={"Authorization": f"Bearer {LITELLM_API_KEY}"},
@@ -63,10 +62,8 @@ async def ingest_document(req: IngestRequest):
                 detail="RAG Poisoning Blocked: Document failed Guardrails AI inspection.",
             )
 
-        # 2. Generate embedding via LiteLLM (also scrubbed by Presidio pre_call)
         vector = await get_embedding(client, req.text)
 
-        # 3. Store clean vector in isolated Qdrant container
         point_id = str(uuid.uuid4())
         qdrant.upsert(
             collection_name=COLLECTION_NAME,

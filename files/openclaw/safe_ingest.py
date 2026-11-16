@@ -4,8 +4,7 @@ import sys
 import urllib.error
 import urllib.request
 
-# Loaded automatically from /opt/openclaw/.env via systemd EnvironmentFile
-LITELLM_URL = os.getenv("OPENAI_BASE_URL", "http://192.168.1").replace("/v1", "")
+LITELLM_URL = os.getenv("OPENAI_BASE_URL", "http://192.168.1.10:4000/v1").replace("/v1", "")
 LITELLM_KEY = os.getenv("OPENAI_API_KEY", "")
 SECURE_RAG_URL = os.getenv("SECURE_RAG_URL", "http://192.168.1.11:8090")
 
@@ -29,7 +28,6 @@ def post_json(url: str, payload: dict, headers: dict | None = None, timeout: int
         err_body = e.read().decode("utf-8", errors="replace")
         return e.code, {"error": err_body}
     except Exception as e:
-        # Fail-closed on network timeout or connection refused
         return 503, {"error": str(e)}
 
 
@@ -62,15 +60,12 @@ def store_in_rag(clean_text: str, source: str) -> dict:
 
 
 def process_pipeline_item(raw_text: str, source: str = "external-webhook", save_to_rag: bool = False) -> str:
-    # Step 1: Mandatory Ingress Inspection (Fail-Closed)
     verified_text = screen_untrusted_text(raw_text)
 
-    # Step 2: Optional Vector Embedding for Long-Term Agent Memory
     if save_to_rag:
         rag_receipt = store_in_rag(verified_text, source)
         print(f"[AUDIT] Stored clean vector ID: {rag_receipt.get('id')}", file=sys.stderr)
 
-    # Step 3: Wrap verified content with explicit data boundary delimiters for OpenClaw
     bounded_prompt = (
         f"<verified_external_data source=\"{source}\">\n"
         f"{verified_text}\n"
@@ -82,9 +77,8 @@ def process_pipeline_item(raw_text: str, source: str = "external-webhook", save_
 
 
 if __name__ == "__main__":
-    # Read untrusted pipeline payload from stdin or CLI argument
-    incoming_payload = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read()
-    source_label = sys.argv[2] if len(sys.argv) > 2 else "cli-pipeline"
+    incoming_payload = sys.argv if len(sys.argv) > 1 else sys.stdin.read()
+    source_label = sys.argv if len(sys.argv) > 2 else "cli-pipeline"
     persist_rag = "--rag" in sys.argv
 
     if not incoming_payload.strip():

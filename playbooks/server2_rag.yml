@@ -1,7 +1,7 @@
 ---
 - name: Configure Server 2 (Workloads & Firewalled RAG)
   hosts: rag_workloads
-  become: true
+  become: false
   vars:
     stack_dir: /opt/ai-app-and-rag-workloads
 
@@ -60,7 +60,7 @@
         src: "{{ item }}"
       loop:
         - "{{ win11_ip }}"
-        - "{{ openclaw_ip }}"
+        - "{{ server1_ip }}"
 
     - name: Allow Windows 11 workstation to reach Open Notebook (8502) and Speakr (8899)
       ufw:

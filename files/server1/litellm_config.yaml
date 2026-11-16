@@ -13,8 +13,44 @@ model_list:
       model: openrouter/meta-llama/llama-3.3-70b-instruct:free
       api_key: os.environ/OPENROUTER_API_KEY
 
-  # --- EMBEDDING MODEL FOR RAG (Zero local CPU/GPU load) ---
+  # --- EMBEDDING MODEL FOR RAG ---
   - model_name: safe-embed-default
     litellm_params:
       model: gemini/text-embedding-004
       api_key: os.environ/GEMINI_API_KEY
+
+# --- NATIVE SECURITY GUARDRAILS ---
+guardrails:
+  # 1. Outgoing Egress Firewall: Redact PII & Block Secrets via Presidio
+  - guardrail_name: "presidio-pii-egress"
+    litellm_params:
+      guardrail: presidio
+      mode: "pre_call"
+      default_on: true
+      pii_entities_config:
+        CREDIT_CARD: "MASK"
+        US_SSN: "BLOCK"
+        EMAIL_ADDRESS: "REPLACE"
+        PHONE_NUMBER: "REPLACE"
+        IP_ADDRESS: "REPLACE"
+        AWS_ACCESS_KEY: "BLOCK"
+
+  # 2. Incoming/Prompt Firewall: Two-Stage Regex + Local ONNX DeBERTa ML Classifier
+  - guardrail_name: "guardrails-ai-shield"
+    litellm_params:
+      guardrail: guardrails_ai
+      mode: "pre_call"
+      default_on: true
+      guard_name: "input-guard"
+      api_base: "http://guardrails-server:8000"
+
+litellm_settings:
+  fallbacks: [{"safe-chat-default": ["safe-chat-default"]}]
+  num_retries: 2
+  request_timeout: 60
+  guardrail_timeout: 15
+  turn_off_message_logging: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: "sqlite:///./data/litellm.db"

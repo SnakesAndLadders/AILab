@@ -39,7 +39,7 @@ services:
           memory: 2.5G
 
   presidio-analyzer:
-    image: ://microsoft.com
+    image: mcr.microsoft.com/presidio-analyzer:latest
     container_name: presidio-analyzer
     restart: unless-stopped
     networks:
@@ -50,7 +50,7 @@ services:
           memory: 2.5G
 
   presidio-anonymizer:
-    image: ://microsoft.com
+    image: mcr.microsoft.com/presidio-anonymizer:latest
     container_name: presidio-anonymizer
     restart: unless-stopped
     networks:
@@ -75,7 +75,7 @@ services:
         limits:
           memory: 3.5G
 
-    # Hardened Autonomous Agent Container (Read-only rootfs + explicit writable state/cache mounts)
+  # Hardened Autonomous Agent Container (Read-only rootfs + explicit writable state/cache mounts)
   openclaw:
     image: ghcr.io/openclaw/openclaw:latest
     container_name: openclaw-agent
@@ -86,7 +86,6 @@ services:
       - no-new-privileges:true
     cap_drop:
       - ALL
-    # Ephemeral RAM-backed scratch spaces (disappear on restart, size-capped to protect 16GB RAM)
     tmpfs:
       - /tmp:size=256M,uid=1000,gid=1000
       - /home/node/.cache:size=128M,uid=1000,gid=1000
@@ -100,9 +99,7 @@ services:
       - SECURE_RAG_URL=http://192.168.1.11:8090
       - OPENCLAW_SANDBOX_MODE=strict
     volumes:
-      # Scoped agent working directory
       - ./openclaw_workspace:/workspace
-      # Scoped agent config, session history, and approved skills
       - ./openclaw_data:/home/node/.openclaw
     networks:
       - openclaw_net
@@ -113,4 +110,3 @@ services:
         limits:
           memory: 2G
           cpus: "2.0"
-

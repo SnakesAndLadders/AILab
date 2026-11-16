@@ -178,7 +178,7 @@ ssh-copy-id ubuntu@192.168.1.11
 ### Step 1: Configure Inventory & Secrets
 1. Clone this repository onto your control node:
    ```bash
-   git clone https://github.com/<your-username>/ai-security-ansible.git
+   git clone https://github.com/SnakesAndLadders/AILab.git
    cd ai-security-ansible
    ```
 2. Verify `inventory.ini` matches your target laptop IPs (`192.168.1.10` and `192.168.1.11`).
