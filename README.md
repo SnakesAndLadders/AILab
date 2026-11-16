@@ -210,8 +210,29 @@ promptfoo view
 > [!TIP] 
 > *(If running inside WSL2 on Windows 11, open the `http://localhost:15500` link printed in your terminal directly in your Windows browser. If running on a headless remote Linux server, forward the port via SSH using `ssh -L 15500:localhost:15500 user@<CONTROL_NODE_IP>`.)*
 
-## Engineering Lessons Learned (Legacy Hardware Constraints)
-Deploying modern AI security tooling on 2009 Intel Xeon E5520 (Nehalem) CPUs without AVX/AVX2 instructions required avoiding AVX2-compiled PyTorch/ONNX wheels. Instead, this architecture pairs compiled Rust/Go binaries (**[Qdrant](https://qdrant.tech/)** with deterministic/regex/NFKC Unicode validators (**[Guardrails AI](https://guardrailsai.com/hub)** + **[Presidio](https://presidio.dataprivacystack.org/)**) and offloads heavy transformer inference and embeddings to rate-limited cloud endpoints behind a strict local [DLP perimeter](https://nhimg.org/glossary/perimeter-era-dlp/). 
+## Engineering Lessons Learned & Architectural Trade-Offs
+
+Building an enterprise-style AI security perimeter on repurposed laptop hardware (`16 GB` + `12 GB` RAM, CPU-only) surfaced several practical engineering lessons that directly mirror real-world production constraints:
+
+1. **CPU Instruction Sets Dictate Local ML Feasibility (Nehalem vs. Kaby Lake AVX2)**
+   * Early architectural scoping on legacy 2009 Xeon E5520 (Nehalem) servers revealed that modern PyTorch and ONNX wheels trigger `Illegal instruction` crashes on CPUs lacking AVX/AVX2 extensions.
+   * Moving the stack to 7th/8th Gen Intel Kaby Lake laptops (`i5-7300U` & `i7-8550U`) unlocked **AVX2 vector instructions**, making it possible to run a pre-baked ONNX `deberta-v3` prompt-injection classifier (`~45 ms` inference) and `int8` Whisper transcription locally without a discrete GPU.
+
+2. **Two-Stage Hybrid Guardrails Balance Latency and Semantic Coverage**
+   * Running a transformer classifier on every single request adds unnecessary CPU load for obvious attacks, while regex-only filters fail against paraphrased jailbreaks.
+   * Chaining a **Stage 1 deterministic pre-filter** (`<1 ms` Unicode `NFKC` normalization, zero-width character stripping, and high-confidence command signatures) ahead of a **Stage 2 ONNX DeBERTa classifier** drops trivial attacks immediately while catching novel semantic injections.
+
+3. **Security vs. Autonomy in Read-Only Agent Containers (`read_only: true`)**
+   * Consolidating the **OpenClaw** autonomous agent onto Server 1 alongside the security gateway traded physical host separation for hardware efficiency.
+   * To preserve zero-trust boundaries without crashing the agent on `Read-only file system` errors, `read_only: true` and `cap_drop: [ALL]` were paired with **UID-scoped `tmpfs` scratch mounts** (`/tmp`, `/home/node/.cache`, `/home/node/.npm`) and isolated bridge networks (`openclaw_net` separated from `secure_egress`), while explicitly withholding `/var/run/docker.sock`.
+
+4. **Memory Budgeting & Swap Cushions Prevent OOM Kills on Constrained Nodes**
+   * Running NLP models (Microsoft Presidio + ONNX DeBERTa) alongside a vector database (Qdrant) and audio transcription (Speakr) within `16 GB` and `12 GB` RAM envelopes requires strict Docker `deploy.resources.limits.memory` caps and a `4 GB` swapfile cushion so transient traffic spikes degrade gracefully rather than triggering Linux OOM kills.
+
+5. **Infrastructure-as-Code & Automated Red-Teaming Turn Labs into Auditable Systems**
+   * Automating host hardening, lid-close keepalive tuning, UFW egress lockdowns, and container builds via **Ansible** ensures repeatable deployments.
+   * Pairing post-deployment compliance checks (`verify_security.yml`) with **Promptfoo** regression suites turns security controls (PII masking, secret blocking, and RAG poisoning defense) into measurable, verifiable telemetry rather than assumptions.
+
 
 ``` mermaid 
 flowchart LR
