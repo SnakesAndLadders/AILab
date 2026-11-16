@@ -9,9 +9,10 @@ An enterprise-inspired, self-hosted AI security architecture enforcing **bi-dire
 This lab separates security enforcement from application workloads across two energy-efficient, AVX2-capable Kaby Lake laptops (~15W–30W TDP with built-in battery backup), orchestrated declaratively with **Ansible** and **Docker Compose**:
 
 ```mermaid
+
 ---
 config:
-  theme: redux-color 
+  theme: redux-dark-color
   layout: dagre
   look: classic
   lineColor: #f4f4f44d
@@ -21,7 +22,7 @@ flowchart LR
     %% Styling
     classDef client fill:#f3f6fa,stroke:#2b579a,stroke-width:2px,color:#111
     classDef gateway fill:#eef7f2,stroke:#1e7e34,stroke-width:2px,color:#111
-    classDef isolated fill:#fff5f5,stroke:#c53030,stroke-width:2px,stroke-dasharray: 5 5,color:#ffo
+    classDef isolated fill:#fff5f5,stroke:#c53030,stroke-width:2px,stroke-dasharray: 5 5,color:#000
     classDef external fill:#f8f9fa,stroke:#4a5568,stroke-width:2px,color:#111
 	
 
