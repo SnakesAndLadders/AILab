@@ -8,6 +8,7 @@ lan_subnet: "192.168.1.0/24"
 # LiteLLM & Guardrails Secrets
 litellm_master_key: "sk-master-change-this-to-a-strong-secret"
 guardrails_token: "local-guardrails-token"
+litellm_db_password: "change-this-strong-postgres-password"
 
 # Scoped Virtual Keys (Populate after initial LiteLLM boot or pre-seed)
 server2_litellm_key: "sk-server2-virtual-key"
@@ -17,4 +18,4 @@ openclaw_litellm_key: "sk-openclaw-virtual-key"
 groq_api_key: "gsk_your_groq_key"
 gemini_api_key: "AIza_your_gemini_key"
 openrouter_api_key: "sk-or-your_openrouter_key"
-mistral_api_key: "your_mistral_key"
+sambanova_api_key: "your_sambanova_key"

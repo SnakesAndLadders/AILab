@@ -10,6 +10,10 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
   - model_name: safe-chat-default
     litellm_params:
+      model: sambanova/Meta-Llama-3.3-70B-Instruct
+      api_key: os.environ/SAMBANOVA_API_KEY
+  - model_name: safe-chat-default
+    litellm_params:
       model: openrouter/meta-llama/llama-3.3-70b-instruct:free
       api_key: os.environ/OPENROUTER_API_KEY
 
@@ -53,4 +57,4 @@ litellm_settings:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  database_url: "sqlite:///./data/litellm.db"
+  store_model_in_db: true

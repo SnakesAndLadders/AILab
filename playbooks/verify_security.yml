@@ -24,7 +24,7 @@
         status_code: 200
 
     - name: Ensure Presidio & Guardrails ports are NOT exposed on host
-      shell: "ss -tulpn | grep -E ':(3000|8000)\s' || true"
+      shell: "ss -tulpn | grep -E ':(3000|5432|8000)\s' || true"
       register: exposed_ports
       changed_when: false
       failed_when: exposed_ports.stdout != ""

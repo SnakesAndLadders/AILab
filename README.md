@@ -45,6 +45,7 @@ flowchart LR
             LITELLM(("LiteLLM Proxy (Port 4000)<br/>Virtual Keys & RPM Rate Limits"))
         end
         subgraph S1_SEC["Zone 2: secure_egress (Internal Only)"]
+            PGDB["PostgreSQL 16 (litellm-db)"]
             PRESIDIO["Microsoft Presidio<br/>(pre_call PII & Secret Redaction)"]
             GUARDRAILS["Guardrails AI Hybrid Shield<br/>Stage 1: Unicode & Regex (<1ms)<br/>Stage 2: ONNX DeBERTa-v3 ML (~45ms)"]
         end
@@ -55,6 +56,7 @@ flowchart LR
             OPENCLAW@{ shape: lean-r}
             SAFE_INGEST -->|"Bounded XML Text"| OPENCLAW
         end
+        LITELLM <-->|"Keys & Audit Logs"| PGDB
         LITELLM <-->|"pre_call Scrubbing"| PRESIDIO
         LITELLM <-->|"pre_call & Standalone"| GUARDRAILS
         SAFE_INGEST -->|"Two-Stage Scan (:4000)"| LITELLM
@@ -99,7 +101,7 @@ flowchart LR
     %% Apply Classes
     class OPENCODE,PROMPTFOO client
     class LITELLM,RAG_API,NOTEBOOK,SPEAKR gateway
-    class PRESIDIO,GUARDRAILS,QDRANT,SAFE_INGEST,OPENCLAW isolated
+    class PGDB,PRESIDIO,GUARDRAILS,QDRANT,SAFE_INGEST,OPENCLAW isolated
     class EXT_DATA,CLOUD external
 ```
 

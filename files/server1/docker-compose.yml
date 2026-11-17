@@ -10,6 +10,30 @@ networks:
     driver: bridge
 
 services:
+
+  # Lightweight PostgreSQL Backend for LiteLLM Virtual Keys & Audit Logs (Internal Only)
+  litellm-db:
+    image: postgres:16-alpine
+    container_name: litellm-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=litellm
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=${LITELLM_DB_PASSWORD}
+    volumes:
+      - ./litellm_pgdata:/var/lib/postgresql/data
+    networks:
+      - secure_egress
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+  
   litellm:
     image: ghcr.io/berriai/litellm:main-stable
     container_name: litellm-gateway
@@ -19,6 +43,7 @@ services:
     env_file:
       - .env
     environment:
+      - DATABASE_URL=postgresql://litellm:${LITELLM_DB_PASSWORD}@litellm-db:5432/litellm
       - PRESIDIO_ANALYZER_API_BASE=http://presidio-analyzer:3000
       - PRESIDIO_ANONYMIZER_API_BASE=http://presidio-anonymizer:3000
     volumes:

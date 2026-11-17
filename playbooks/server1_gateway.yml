@@ -65,6 +65,7 @@
           GEMINI_API_KEY={{ gemini_api_key }}
           OPENROUTER_API_KEY={{ openrouter_api_key }}
           MISTRAL_API_KEY={{ mistral_api_key }}
+          LITELLM_DB_PASSWORD={{ litellm_db_password }}
 
     - name: Configure UFW default deny incoming
       ufw:
