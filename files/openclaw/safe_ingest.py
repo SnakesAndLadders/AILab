@@ -77,8 +77,9 @@ def process_pipeline_item(raw_text: str, source: str = "external-webhook", save_
 
 
 if __name__ == "__main__":
-    incoming_payload = sys.argv if len(sys.argv) > 1 else sys.stdin.read()
-    source_label = sys.argv if len(sys.argv) > 2 else "cli-pipeline"
+    # Read untrusted pipeline payload from CLI argument [1] or stdin
+    incoming_payload = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("--") else sys.stdin.read()
+    source_label = sys.argv[2] if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else "cli-pipeline"
     persist_rag = "--rag" in sys.argv
 
     if not incoming_payload.strip():

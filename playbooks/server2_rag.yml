@@ -76,7 +76,13 @@
       ufw:
         state: enabled
 
-    - name: Build and start Server 2 RAG and Workload stack
+    - name: Pull pre-built Docker images
+      command: docker compose pull --ignore-buildable
+      args:
+        chdir: "{{ stack_dir }}"
+
+    - name: Build local services and start stack
       command: docker compose up -d --build
       args:
         chdir: "{{ stack_dir }}"
+

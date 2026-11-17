@@ -113,16 +113,19 @@ services:
       - ALL
     tmpfs:
       - /tmp:size=256M,uid=1000,gid=1000
-      - /home/node/.cache:size=128M,uid=1000,gid=1000
-      - /home/node/.npm:size=128M,uid=1000,gid=1000
+      - /home/node:size=256M,uid=1000,gid=1000
     ports:
       - "18789:18789"
     environment:
       - HOME=/home/node
+      - OPENCLAW_STATE_DIR=/home/node/.openclaw
+      - OPENCLAW_CONFIG_PATH=/home/node/.openclaw/openclaw.json
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - OPENAI_BASE_URL=http://litellm:4000/v1
       - OPENAI_API_KEY=${OPENCLAW_LITELLM_KEY}
       - SECURE_RAG_URL=http://192.168.1.11:8090
       - OPENCLAW_SANDBOX_MODE=strict
+    command: ["node", "dist/index.js", "gateway", "--allow-unconfigured", "--port", "18789", "--bind", "lan"]
     volumes:
       - ./openclaw_workspace:/workspace
       - ./openclaw_data:/home/node/.openclaw
