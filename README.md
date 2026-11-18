@@ -6,7 +6,7 @@ An enterprise-inspired, self-hosted AI security architecture enforcing **bi-dire
 
 ## Architecture Overview
 
-This lab separates security enforcement from application workloads across two energy-efficient, AVX2-capable Kaby Lake laptops (~15W–30W TDP with built-in battery backup), orchestrated declaratively with **Ansible** and **Docker Compose**:
+This lab separates security enforcement from application workloads across two energy-efficient, AVX2-capable Kaby Lake laptops (~15W–30W TDP with built-in battery backup), orchestrated declaratively with **[Ansible](https://docs.ansible.com/)** and **[Docker Compose](https://docs.docker.com/compose/)**, validated with automated **[Promptfoo](https://www.promptfoo.dev/)** red-team evaluations:
 
 ```mermaid
 ---
@@ -18,91 +18,65 @@ config:
     
 ---
 flowchart LR
-    %% Styling
-    classDef client fill:#f3f6fa,stroke:#2b579a,stroke-width:2px,color:#111
-    classDef gateway fill:#eef7f2,stroke:#1e7e34,stroke-width:2px,color:#111
-    classDef isolated fill:#fff5f5,stroke:#c53030,stroke-width:2px,stroke-dasharray: 5 5,color:#000
-    classDef external fill:#f8f9fa,stroke:#4a5568,stroke-width:2px,color:#111
-	
-
-    %% Client Tier
-    subgraph CLIENTS["Workstation & External Data"]
-        direction TB
-        subgraph WIN11["Windows 11 Workstation (192.168.1.20)"]
-            OPENCODE["VSCode + OpenCode"]
-            OPENCODE@{ shape: console}
-            PROMPTFOO["Promptfoo Red-Team Suite<br/>(Regex + Semantic ML Probes)"]
-            PROMPTFOO@{ shape: console}
-        end
+    subgraph ING["External Data"]
         EXT_DATA["External Untrusted Data<br/>(Webhooks / Scraped Pages)"]
         EXT_DATA@{ shape: cloud }
     end
 
-    %% Server 1 (Dell Latitude 7480)
-    subgraph SERVER1["Server 1: Dell Latitude 7480 (192.168.1.10) - i5-7300U | 16GB RAM"]
-        direction TB
-        subgraph S1_LAN["Zone 1: lan_ingress"]
-            LITELLM(("LiteLLM Proxy (Port 4000)<br/>Virtual Keys & RPM Rate Limits"))
-        end
-        subgraph S1_SEC["Zone 2: secure_egress (Internal Only)"]
-            PGDB["PostgreSQL 16 (litellm-db)"]
-            PRESIDIO["Microsoft Presidio<br/>(pre_call PII & Secret Redaction)"]
-            GUARDRAILS["Guardrails AI Hybrid Shield<br/>Stage 1: Unicode & Regex (<1ms)<br/>Stage 2: ONNX DeBERTa-v3 ML (~45ms)"]
-        end
-        subgraph S1_OC["Zone 3: openclaw_net (Hardened Container: cap_drop ALL, read_only)"]
-            SAFE_INGEST["safe_ingest.py (Air-Lock)"]
-            SAFE_INGEST@{ shape: lean-r}
-            OPENCLAW["OpenClaw Agent (Port 18789)"]
-            OPENCLAW@{ shape: lean-r}
-            SAFE_INGEST -->|"Bounded XML Text"| OPENCLAW
-        end
-        LITELLM <-->|"Keys & Audit Logs"| PGDB
-        LITELLM <-->|"pre_call Scrubbing"| PRESIDIO
-        LITELLM <-->|"pre_call & Standalone"| GUARDRAILS
-        SAFE_INGEST -->|"Two-Stage Scan (:4000)"| LITELLM
-        OPENCLAW -->|"Scoped Chat (:4000/v1)"| LITELLM
+    subgraph WIN["Windows 11 Workstation (192.168.1.20 / WSL2)"]
+        IDE["VSCode + OpenCode"]
+        PF["Promptfoo Red-Team Suite"]
     end
 
-    %% Server 2 (Lenovo Ideapad 130-15IKB)
-    subgraph SERVER2["Server 2: Lenovo Ideapad 130-15IKB (192.168.1.11) - i7-8550U | 12GB RAM"]
-        direction TB
-        subgraph S2_LAN["Zone 1: lan_net"]
-            RAG_API["Secure RAG API (Port 8090)"]
-            NOTEBOOK["Open Notebook (Port 8502)"]
-            SPEAKR["Speakr Whisper int8 (Port 8899)"]
+    subgraph S1["Server 1: Dell Latitude 7480 (192.168.1.10 | 16GB RAM)"]
+        subgraph Z3["Zone 3: Hardened Autonomous Agent"]
+            OC["OpenClaw Agent (:18789)<br/>read_only | cap_drop: ALL | uid 1000"]
+            OC@{ shape: browser }
+            SI["safe_ingest.py Air-Lock<br/>Fail-Closed + XML Delimiters"]
+            SI --> OC
         end
-        subgraph S2_RAG["Zone 2: rag_internal (Internal Only)"]
-            QDRANT[("Qdrant Vector DB (Port 6333)")]
+
+        subgraph Z2["Zone 2: Zero-Trust Security Gateway"]
+            LLM["LiteLLM Proxy (:4000)<br/>Virtual Keys + RPM Caps"]
+            PG[("PostgreSQL 16<br/>(internal)")]
+            PRES["Microsoft Presidio<br/>Egress PII/Secret DLP"]
+            GR["Guardrails AI Hybrid Shield<br/>Stage 1 Regex + Stage 2 ONNX DeBERTa"]
+            LLM --- PG
+            LLM --- PRES
+            LLM --- GR
         end
-        RAG_API <-->|"Store/Retrieve Clean Vectors"| QDRANT
+
+        OC -->|"openclaw_net"| LLM
     end
 
-    %% External Cloud
-    
-    CLOUD["Public Free-Tier LLMs & Embeddings<br/>(Groq, Gemini, OpenRouter, Mistral)"]
-    CLOUD@{ shape: cloud }
+    subgraph S2["Server 2: Lenovo Ideapad 130-15IKB (192.168.1.11 | 12GB RAM)"]
+        subgraph Z1["Zone 1: Firewalled RAG & Workloads"]
+            RAG["Secure RAG API (:8090)"]
+            QD[("Qdrant Vector DB<br/>(rag_internal only)")]
+            ON["Open Notebook (:8502)"]
+            ON@{ shape: browser }
+            SDB[("SurrealDB v2")]
+            SPK["Speakr Audio (:8899)"]
+            SPK@{ shape: browser }
+            RAG --- QD
+            ON --- SDB
+        end
+    end
 
-    %% Traffic Flows
-    OPENCODE -->|"Sanitized Prompts (:4000/v1)"| LITELLM
-    OPENCODE -->|"RAG Queries (:8090/query)"| RAG_API
-    PROMPTFOO -.->|"Red-Team Probes (:4000 & :8090)"| LITELLM
-    PROMPTFOO -.->|"Poisoning Tests (:8090/ingest)"| RAG_API
+    subgraph CLOUD["Free-Tier Upstream APIs (TLS)"]
+        API["Groq | Google Gemini 3.8 Flash | OpenRouter Auto-Free"]
+        API@{ shape: cloud }
+    end
 
-    EXT_DATA -->|"Untrusted Input"| SAFE_INGEST
-    SAFE_INGEST -->|"Ingest Clean (:8090/ingest)"| RAG_API
-    OPENCLAW -->|"Context Retrieval (:8090/query)"| RAG_API
-
-    RAG_API -->|"Validate & Embed (:4000)"| LITELLM
-    NOTEBOOK -->|"Egress Prompts (:4000/v1)"| LITELLM
-    SPEAKR -->|"Egress Summaries (:4000/v1)"| LITELLM
-
-    LITELLM -->|"Sanitized Prompts & Embeddings"| CLOUD
-
-    %% Apply Classes
-    class OPENCODE,PROMPTFOO client
-    class LITELLM,RAG_API,NOTEBOOK,SPEAKR gateway
-    class PGDB,PRESIDIO,GUARDRAILS,QDRANT,SAFE_INGEST,OPENCLAW isolated
-    class EXT_DATA,CLOUD external
+    IDE -->|"UFW :4000"| LLM
+    PF -->|"UFW :4000 / :8090"| LLM
+    PF --> RAG
+    RAG -->|"Embed & Validate"| LLM
+    ON --> LLM
+    SPK -->|"Whisper & Summary"| LLM
+    PRES -->|"Sanitized Egress"| API
+    ING -->|"Sanitized Ingress"| GR
+    ING -->|"Sanitized Ingress"| SI
 ```
 
 ---
@@ -146,8 +120,6 @@ flowchart LR
   * **Server 2 (`192.168.1.11`):** Lenovo Ideapad 130-15IKB (12 GB RAM)
 * **API Keys:** Free-tier keys from Groq, Google AI Studio (Gemini), OpenRouter, or Mistral.
 
----
-
 ### Installing Ansible (Control Node Setup)
 
 #### 1. Windows 11: Install WSL2 & Ubuntu (Skip if already on Linux)
@@ -171,8 +143,8 @@ ansible-galaxy collection install community.general
 #### 3. Configure SSH Key Authentication
 ```bash
 ssh-keygen -t ed25519 -C "ansible-control-node"
-ssh-copy-id ubuntu@192.168.1.10
-ssh-copy-id ubuntu@192.168.1.11
+ssh-copy-id [user]@192.168.1.10
+ssh-copy-id [user]@192.168.1.11
 ```
 
 ---
@@ -183,7 +155,7 @@ ssh-copy-id ubuntu@192.168.1.11
    git clone https://github.com/SnakesAndLadders/AILab.git
    cd ai-security-ansible
    ```
-2. Verify `inventory.ini` matches your target laptop IPs (`192.168.1.10` and `192.168.1.11`).
+2. Verify `inventory.ini` matches your target laptop IPs (`192.168.1.10` and `192.168.1.11` in this case).
 3. Edit `group_vars/all.yml` to add your upstream free-tier API keys and a strong `litellm_master_key`. *(Recommended: Encrypt secrets with `ansible-vault encrypt group_vars/all.yml`.)*
 4. Test connectivity:
    ```bash
@@ -205,21 +177,21 @@ Generate isolated, rate-limited virtual keys via LiteLLM's `/key/generate` endpo
 
 1. **Key for Server 2 (RAG Embeddings & Workloads):**
    ```bash
-   curl -X POST 'http://192.168.1.10:4000/key/generate' \
+   curl -X POST 'http://[server1 IP]:4000/key/generate' \
      -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
      -H 'Content-Type: application/json' \
      -d '{"key_alias": "server2-rag-apps", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 30}'
    ```
 2. **Key for OpenClaw Agent Container (Strict RPM Cap):**
    ```bash
-   curl -X POST 'http://192.168.1.10:4000/key/generate' \
+   curl -X POST 'http://[server1 IP]:4000/key/generate' \
      -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
      -H 'Content-Type: application/json' \
      -d '{"key_alias": "openclaw-agent", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 10}'
    ```
 3. **Key for Windows 11 Workstation (OpenCode & Promptfoo):**
    ```bash
-   curl -X POST 'http://192.168.1.10:4000/key/generate' \
+   curl -X POST 'http://[server1 IP]:4000/key/generate' \
      -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
      -H 'Content-Type: application/json' \
      -d '{"key_alias": "win11-opencode", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 30}'
@@ -273,23 +245,20 @@ promptfoo view
 
 ---
 
-## Engineering Lessons Learned & Architectural Trade-Offs
+## Verification & Red-Team Results
 
-1. **CPU Instruction Sets Dictate Local ML Feasibility (Nehalem vs. Kaby Lake AVX2)**
-   * Early scoping on legacy 2009 Xeon E5520 (Nehalem) servers revealed that modern PyTorch and ONNX wheels trigger `Illegal instruction` crashes on CPUs lacking AVX/AVX2 extensions.
-   * Moving the stack to 7th/8th Gen Intel Kaby Lake laptops (`i5-7300U` & `i7-8550U`) unlocked **AVX2 vector instructions**, enabling a pre-baked ONNX `deberta-v3` prompt-injection classifier (`~45 ms` inference) and `int8` Whisper transcription locally without a discrete GPU.
+### **Ansible Compliance (`verify_security.yml`):** 
+- Confirmed internal services (`Presidio :3000`, `Guardrails :8000`, `PostgreSQL :5432`, `Qdrant :6333/6334`) have zero host-exposed ports
+- `OpenClaw` runs as `1000:1000` with `ReadonlyRootfs=true` and `CapDrop=[ALL]`
+- `safe_ingest.py` blocks malicious injections (`rc=2`) while wrapping clean telemetry in `<verified_external_data>` XML delimiters (`rc=0`)  
 
-2. **Two-Stage Hybrid Guardrails Balance Latency and Semantic Coverage**
-   * Running a transformer classifier on every request adds unnecessary CPU load for obvious attacks, while regex-only filters fail against paraphrased jailbreaks.
-   * Chaining a **Stage 1 deterministic pre-filter** (`<1 ms` Unicode `NFKC` normalization, zero-width character stripping, and high-confidence command signatures) ahead of a **Stage 2 ONNX DeBERTa classifier** drops trivial attacks immediately while catching novel semantic injections.
+### **Promptfoo Security Benchmark (`6/6 PASS`):**
+- Verified Presidio DLP secret blocking
+  - Stage 1 Unicode/regex injection defense
+  - Stage 2 ONNX DeBERTa semantic detection (`confidence: 1.00`), and Server 2 `/ingest` RAG poisoning rejection.
 
-3. **Security vs. Autonomy in Read-Only Agent Containers (`read_only: true`)**
-   * Consolidating the **OpenClaw** autonomous agent onto Server 1 alongside the security gateway traded physical host separation for hardware efficiency.
-   * To preserve zero-trust boundaries without crashing the agent on `Read-only file system` errors, `read_only: true` and `cap_drop: [ALL]` were paired with **UID-scoped `tmpfs` scratch mounts** (`/tmp`, `/home/node/.cache`, `/home/node/.npm`) and isolated bridge networks (`openclaw_net` separated from `secure_egress`), while explicitly withholding `/var/run/docker.sock`.
+---
+## Screenshots
 
-4. **Memory Budgeting & Swap Cushions Prevent OOM Kills on Constrained Nodes**
-   * Running NLP models (Microsoft Presidio + ONNX DeBERTa) alongside Qdrant and Speakr within `16 GB` and `12 GB` RAM envelopes requires strict Docker `deploy.resources.limits.memory` caps and a `4 GB` swapfile cushion so transient traffic spikes degrade gracefully rather than triggering Linux OOM kills.
-
-5. **Infrastructure-as-Code & Automated Red-Teaming Turn Labs into Auditable Systems**
-   * Automating host hardening, lid-close keepalive tuning, UFW egress lockdowns, and container builds via **Ansible** ensures repeatable deployments.
-   * Pairing post-deployment compliance checks (`verify_security.yml`) with **Promptfoo** regression suites turns security controls into measurable, verifiable telemetry.
+![Image of verify_security Ansible step](/media/safe_ingest.png)
+![Image of Promptfoo scorecard](/media/promptfoo.png)
