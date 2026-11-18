@@ -32,20 +32,19 @@ def post_json(url: str, payload: dict, headers: dict | None = None, timeout: int
 
 
 def screen_untrusted_text(raw_text: str) -> str:
-    """Validate text through Server 1 Guardrails AI before OpenClaw touches it."""
+    """Validate untrusted text through LiteLLM's pre_call Guardrails AI shield using a standard virtual key."""
     status, data = post_json(
-        url=f"{LITELLM_URL}/guardrails/apply_guardrail",
+        url=f"{LITELLM_URL}/v1/chat/completions",
         payload={
-            "guardrail_name": "guardrails-ai-shield",
-            "text": raw_text,
+            "model": "safe-chat-default",
+            "messages": [{"role": "user", "content": raw_text}],
+            "max_tokens": 1,
         },
         headers={"Authorization": f"Bearer {LITELLM_KEY}"},
     )
-
     if status != 200:
         raise RuntimeError(f"BLOCKED by Ingress Firewall (HTTP {status}): {data.get('error')}")
-
-    return data.get("response_text", raw_text)
+    return raw_text
 
 
 def store_in_rag(clean_text: str, source: str) -> dict:

@@ -1,7 +1,7 @@
 ---
 - name: Configure Server 1 (AI Security Gateway & Hardened OpenClaw Container)
   hosts: security_gateway
-  become: false
+  become: true
   vars:
     stack_dir: /opt/ai-security-gateway
 
@@ -83,6 +83,7 @@
       loop:
         - docker-compose.yml
         - litellm_config.yaml
+      register: litellm_cfg
 
     - name: Copy Guardrails AI build context
       copy:
@@ -92,6 +93,7 @@
       loop:
         - Dockerfile
         - config.py
+      register: guardrails_cfg
 
     - name: Write .env file with API keys
       copy:
@@ -104,7 +106,6 @@
           GROQ_API_KEY={{ groq_api_key }}
           GEMINI_API_KEY={{ gemini_api_key }}
           OPENROUTER_API_KEY={{ openrouter_api_key }}
-          SAMBANOVA_API_KEY={{ sambanova_api_key }}
           LITELLM_DB_PASSWORD={{ litellm_db_password }}
           OPENCLAW_GATEWAY_TOKEN={{ openclaw_gateway_token }}
 
@@ -119,6 +120,13 @@
         port: "22"
         proto: tcp
         src: "{{ lan_subnet }}"
+
+    - name: Allow SSH from client subnet
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        src: "{{ client_subnet }}"
 
     - name: Allow authorized clients to reach LiteLLM Gateway (Port 4000)
       ufw:
@@ -141,13 +149,7 @@
       ufw:
         state: enabled
 
-    - name: Pull pre-built Docker images
-      command: docker compose pull --ignore-buildable
-      args:
-        chdir: "{{ stack_dir }}"
-
-    - name: Build local services and start stack
+    - name: Build and start Server 1 Security Gateway & OpenClaw stack
       command: docker compose up -d --build
       args:
         chdir: "{{ stack_dir }}"
-

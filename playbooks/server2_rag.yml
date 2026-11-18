@@ -1,7 +1,7 @@
 ---
 - name: Configure Server 2 (Workloads & Firewalled RAG)
   hosts: rag_workloads
-  become: false
+  become: true
   vars:
     stack_dir: /opt/ai-app-and-rag-workloads
 
@@ -39,6 +39,7 @@
         mode: "0600"
         content: |
           SERVER2_LITELLM_KEY={{ server2_litellm_key }}
+          OPEN_NOTEBOOK_ENCRYPTION_KEY={{ open_notebook_encryption_key }}
 
     - name: Configure UFW default deny incoming
       ufw:
@@ -51,6 +52,13 @@
         port: "22"
         proto: tcp
         src: "{{ lan_subnet }}"
+
+    - name: Allow SSH from client subnet
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+        src: "{{ client_subnet }}"
 
     - name: Allow authorized clients to reach Secure RAG API (Port 8090)
       ufw:
@@ -85,4 +93,3 @@
       command: docker compose up -d --build
       args:
         chdir: "{{ stack_dir }}"
-

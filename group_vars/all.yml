@@ -20,5 +20,6 @@ gemini_api_key: "AIza_your_gemini_key"
 openrouter_api_key: "sk-or-your_openrouter_key"
 sambanova_api_key: "your_sambanova_key"
 
-# OpenClaw key, generate a strong key with: 
+# Service keys, generate a strong key with: 
 openclaw_gateway_token: "oc-token-change-this-to-a-strong-secret"
+open_notebook_encryption_key: "change-this-to-a-32-char-secret"

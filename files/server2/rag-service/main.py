@@ -8,7 +8,8 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 
 app = FastAPI(title="Firewalled RAG Ingestion & Retrieval Service")
 
-LITELLM_BASE_URL = os.getenv("LITELLM_BASE_URL", "http://192.168.1.10:4000")
+LITELLM_URL = os.getenv("LITELLM_BASE_URL", os.getenv("OPENAI_BASE_URL", "http://192.168.1.10:4000")).replace("/v1", "")
+
 LITELLM_API_KEY = os.getenv("LITELLM_API_KEY", "")
 QDRANT_URL = os.getenv("QDRANT_URL", "http://qdrant:6333")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "lab_knowledge_base")
@@ -48,34 +49,24 @@ async def get_embedding(client: httpx.AsyncClient, text: str) -> list[float]:
 
 
 @app.post("/ingest")
-async def ingest_document(req: IngestRequest):
-    async with httpx.AsyncClient() as client:
-        guard_resp = await client.post(
-            f"{LITELLM_BASE_URL}/guardrails/apply_guardrail",
+async def validate_with_guardrails(text: str) -> None:
+    """Validate text against Server 1's pre_call Guardrails AI shield before embedding."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{LITELLM_URL}/v1/chat/completions",
             headers={"Authorization": f"Bearer {LITELLM_API_KEY}"},
-            json={"guardrail_name": "guardrails-ai-shield", "text": req.text},
-            timeout=15.0,
+            json={
+                "model": "safe-chat-default",
+                "messages": [{"role": "user", "content": text}],
+                "max_tokens": 1,
+            },
         )
-        if guard_resp.status_code != 200:
+        if resp.status_code != 200:
             raise HTTPException(
-                status_code=403,
-                detail="RAG Poisoning Blocked: Document failed Guardrails AI inspection.",
+                status_code=400,
+                detail=f"Blocked by Guardrails AI Shield: {resp.text}",
             )
 
-        vector = await get_embedding(client, req.text)
-
-        point_id = str(uuid.uuid4())
-        qdrant.upsert(
-            collection_name=COLLECTION_NAME,
-            points=[
-                PointStruct(
-                    id=point_id,
-                    vector=vector,
-                    payload={"text": req.text, "source": req.source},
-                )
-            ],
-        )
-        return {"status": "ingested", "id": point_id, "source": req.source}
 
 
 @app.post("/query")

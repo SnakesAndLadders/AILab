@@ -247,11 +247,22 @@ ansible-playbook -i inventory.ini playbooks/verify_security.yml --ask-become-pas
 Install Node.js and Promptfoo on your control node to benchmark Egress DLP, Ingress Regex + ONNX ML detection, and RAG poisoning defense:
 
 ```bash
-# Install Node.js 20.x LTS & Promptfoo
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt-get install -y nodejs
-sudo npm install -g promptfoo
-
+# Install fnm 
+sudo apt update && sudo apt install -y curl unzip
+curl -fsSL https://fnm.vercel.app/install | bash
+source ~/.bashrc
+# Download and install fnm:
+curl -o- https://fnm.vercel.app/install | bash
+# In lieu of restarting the shell
+export PATH="$HOME/.local/share/fnm:$PATH"
+eval "$(fnm env)"
+# Download and install Node.js:
+fnm install --use 26
+# Verify the Node.js version:
+node -v # Should print "v26.13.1".
+# Verify npm version:
+npm -v # Should print "11.20.0".
+sudo npm install -g promptfoo@latest
 # Run the red-team suite
 export LITELLM_TEST_KEY="<YOUR_WIN11_VIRTUAL_KEY>"
 promptfoo eval -c redteam/promptfooconfig.yaml

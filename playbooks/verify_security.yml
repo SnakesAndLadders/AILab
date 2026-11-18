@@ -52,7 +52,7 @@
         "ansible-smoke-test"
       register: clean_test
       changed_when: false
-      failed_when: clean_test.rc != 0 or "'<verified_external_data'" not in clean_test.stdout
+      failed_when: clean_test.rc != 0 or '<verified_external_data' not in clean_test.stdout
 
 - name: Verify Server 2 RAG API & Qdrant Isolation
   hosts: rag_workloads

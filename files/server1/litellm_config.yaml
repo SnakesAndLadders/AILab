@@ -1,60 +1,76 @@
 model_list:
-  # --- CHAT MODELS ---
+  # 1. Primary: Groq Free Tier (Ultra-fast Llama 3.3 70B)
   - model_name: safe-chat-default
     litellm_params:
       model: groq/llama-3.3-70b-versatile
       api_key: os.environ/GROQ_API_KEY
-  - model_name: safe-chat-default
-    litellm_params:
-      model: gemini/gemini-2.5-flash
-      api_key: os.environ/GEMINI_API_KEY
-  - model_name: safe-chat-default
-    litellm_params:
-      model: sambanova/Meta-Llama-3.3-70B-Instruct
-      api_key: os.environ/SAMBANOVA_API_KEY
-  - model_name: safe-chat-default
-    litellm_params:
-      model: openrouter/meta-llama/llama-3.3-70b-instruct:free
-      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 30
+      order: 1
 
-  # --- EMBEDDING MODEL FOR RAG ---
+  # 2. Secondary: Google Gemini Free Tier
+  - model_name: safe-chat-default
+    litellm_params:
+      model: gemini/gemini-3.8-flash
+      api_key: os.environ/GEMINI_API_KEY
+      rpm: 15
+      order: 2
+
+  # 3. Tertiary: OpenRouter Auto-Free Router (Never breaks on rotating :free slugs)
+  - model_name: safe-chat-default
+    litellm_params:
+      model: openrouter/openrouter/free
+      api_key: os.environ/OPENROUTER_API_KEY
+      rpm: 20
+      order: 3
+
+  # Free-Tier Embedding Model for Firewalled RAG
   - model_name: safe-embed-default
     litellm_params:
-      model: gemini/text-embedding-004
+      model: gemini/gemini-embedding-001
       api_key: os.environ/GEMINI_API_KEY
+      rpm: 1500
 
-# --- NATIVE SECURITY GUARDRAILS ---
+  # Free-Tier Audio Transcription Model via Groq (for Speakr)
+  - model_name: safe-whisper-default
+    litellm_params:
+      model: groq/whisper-large-v3-turbo
+      api_key: os.environ/GROQ_API_KEY
+      rpm: 20
+
 guardrails:
-  # 1. Outgoing Egress Firewall: Redact PII & Block Secrets via Presidio
-  - guardrail_name: "presidio-pii-egress"
+  # Egress DLP: Microsoft Presidio PII & Secret Redaction
+  - guardrail_name: "presidio-dlp-egress"
     litellm_params:
       guardrail: presidio
-      mode: "pre_call"
+      mode: ["pre_call", "post_call"]
       default_on: true
       pii_entities_config:
-        CREDIT_CARD: "MASK"
         US_SSN: "BLOCK"
-        EMAIL_ADDRESS: "REPLACE"
-        PHONE_NUMBER: "REPLACE"
-        IP_ADDRESS: "REPLACE"
         AWS_ACCESS_KEY: "BLOCK"
+        CREDIT_CARD: "MASK"
+        EMAIL_ADDRESS: "MASK"
+        PHONE_NUMBER: "MASK"
 
-  # 2. Incoming/Prompt Firewall: Two-Stage Regex + Local ONNX DeBERTa ML Classifier
-  - guardrail_name: "guardrails-ai-shield"
+  # Ingress Shield: Guardrails AI Two-Stage Regex + ONNX DeBERTa Classifier
+  - guardrail_name: "guardrails-ai-ingress"
     litellm_params:
       guardrail: guardrails_ai
-      mode: "pre_call"
+      mode: ["pre_call"]
       default_on: true
       guard_name: "input-guard"
       api_base: "http://guardrails-server:8000"
+      api_key: os.environ/GUARDRAILS_TOKEN
 
 litellm_settings:
-  fallbacks: [{"safe-chat-default": ["safe-chat-default"]}]
+  drop_params: true
+  set_verbose: false
+
+router_settings:
+  routing_strategy: simple-shuffle
+  enable_pre_call_checks: true
   num_retries: 2
-  request_timeout: 60
-  guardrail_timeout: 15
-  turn_off_message_logging: false
+  timeout: 30
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  store_model_in_db: true
+  store_model_in_db: false
