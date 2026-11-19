@@ -1,20 +1,22 @@
 import re
 import unicodedata
-from typing import Any, Dict, Optional
-from guardrails import Guard  # type: ignore
-from guardrails.validator_base import (  # type: ignore
+from typing import Any, Dict, List, Optional
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from guardrails import Guard
+from guardrails.validator_base import (
     FailResult,
     PassResult,
     ValidationResult,
     Validator,
     register_validator,
 )
-from optimum.onnxruntime import ORTModelForSequenceClassification  # type: ignore
-from transformers import AutoTokenizer, pipeline  # type: ignore
+from optimum.onnxruntime import ORTModelForSequenceClassification
+from transformers import AutoTokenizer, pipeline
 
 
-@register_validator(name="kaby-lake-hybrid-shield", data_type="string")
-class KabyLakeHybridShield(Validator):
+@register_validator(name="hybrid-prompt-injection-shield", data_type="string")
+class HybridPromptInjectionShield(Validator):
     """Two-stage validator: Instant Unicode/Regex filter + Local ONNX DeBERTa ML classifier."""
 
     INJECTION_PATTERNS = [
@@ -38,7 +40,6 @@ class KabyLakeHybridShield(Validator):
         super().__init__(injection_threshold=injection_threshold, **kwargs)
         self.injection_threshold = injection_threshold
 
-        # Load pre-baked ONNX DeBERTa classifier once into RAM
         tokenizer = AutoTokenizer.from_pretrained("/app/onnx_model")
         model = ORTModelForSequenceClassification.from_pretrained("/app/onnx_model")
         self.classifier = pipeline(
@@ -50,7 +51,6 @@ class KabyLakeHybridShield(Validator):
         )
 
     def validate(self, value: str, metadata: Optional[Dict[str, Any]] = None) -> ValidationResult:
-        # --- STAGE 1: Fast Deterministic Pre-Filter ---
         if self.ZERO_WIDTH_CHARS.search(value):
             return FailResult(
                 error_message="Blocked (Stage 1): Hidden zero-width Unicode characters detected.",
@@ -71,10 +71,11 @@ class KabyLakeHybridShield(Validator):
                     error_message="Blocked (Stage 1): High-risk toxicity or dangerous content detected."
                 )
 
-        # --- STAGE 2: Local ONNX DeBERTa Semantic Classifier ---
-        prediction = self.classifier(normalized)
+        results = self.classifier(normalized)
+        prediction = results[0] if isinstance(results, list) and results else {}
         label = prediction.get("label", "")
         score = float(prediction.get("score", 0.0))
+
 
         if label == "INJECTION" and score >= self.injection_threshold:
             return FailResult(
@@ -84,7 +85,33 @@ class KabyLakeHybridShield(Validator):
         return PassResult(validated_value=normalized)
 
 
-# Register the Guard instance named 'input-guard' for LiteLLM
-input_guard = Guard(name="input-guard").use(
-    KabyLakeHybridShield(injection_threshold=0.85, on_fail="exception")
-)
+guard = Guard().use(HybridPromptInjectionShield(injection_threshold=0.85, on_fail="exception"))
+app = FastAPI(title="Guardrails Hybrid Shield")
+
+
+class ValidateRequest(BaseModel):
+    llmOutput: Optional[str] = None
+    text: Optional[str] = None
+    input: Optional[str] = None
+    messages: Optional[List[Dict[str, Any]]] = None
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+@app.post("/guards/{guard_id}/validate")
+def validate_guard(guard_id: str, req: ValidateRequest):
+    payload = req.llmOutput or req.text or req.input or ""
+    if not payload and req.messages:
+        payload = "\n".join(str(m.get("content", "")) for m in req.messages)
+
+    try:
+        outcome = guard.validate(payload)
+        return {
+            "validationPassed": outcome.validation_passed,
+            "validatedOutput": outcome.validated_output,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))

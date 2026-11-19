@@ -5,20 +5,17 @@ openclaw_ip: "192.168.1.12"
 win11_ip: "192.168.1.20"
 lan_subnet: "192.168.1.0/24"
 
-# LiteLLM & Guardrails Secrets
-litellm_master_key: "sk-master-change-this-to-a-strong-secret"
-guardrails_token: "local-guardrails-token"
+# Gateway & Internal Service Secrets
+litellm_master_key: "sk-master-change-this-secret"
 litellm_db_password: "change-this-strong-postgres-password"
+guardrails_token: "gr-token-change-this-secret"
+openclaw_gateway_token: "oc-token-change-this-secret"
+open_notebook_encryption_key: "change-this-to-a-32-char-secret-key"
 
-# Scoped Virtual Keys (Populate after initial LiteLLM boot or pre-seed)
-server2_litellm_key: "sk-server2-virtual-key"
+# Scoped Virtual Keys (Generate via LiteLLM /key/generate after initial boot)
 openclaw_litellm_key: "sk-openclaw-virtual-key"
-
-# Free-Tier Provider API Keys
-groq_api_key: "gsk_your_groq_key"
-gemini_api_key: "AIza_your_gemini_key"
-openrouter_api_key: "sk-or-your_openrouter_key"
-sambanova_api_key: "your_sambanova_key"
+server2_litellm_key: "sk-server2-virtual-key"
+win11_litellm_key: "sk-win11-virtual-key"
 
 # Service keys, generate a strong key with: 
 openclaw_gateway_token: "oc-token-change-this-to-a-strong-secret"

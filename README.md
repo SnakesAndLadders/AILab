@@ -29,13 +29,14 @@ flowchart LR
     end
 
     subgraph S1["Server 1: Dell Latitude 7480 (192.168.1.10 | 16GB RAM)"]
+        
         subgraph Z3["Zone 3: Hardened Autonomous Agent"]
             OC["OpenClaw Agent (:18789)<br/>read_only | cap_drop: ALL | uid 1000"]
             OC@{ shape: browser }
             SI["safe_ingest.py Air-Lock<br/>Fail-Closed + XML Delimiters"]
             SI --> OC
         end
-
+        
         subgraph Z2["Zone 2: Zero-Trust Security Gateway"]
             LLM["LiteLLM Proxy (:4000)<br/>Virtual Keys + RPM Caps"]
             PG[("PostgreSQL 16<br/>(internal)")]

@@ -11,7 +11,7 @@ services:
   qdrant:
     image: qdrant/qdrant:latest
     container_name: qdrant-vectordb
-    restart: unless-
+    restart: unless-stopped
     environment:
       - QDRANT__TELEMETRY_DISABLED=true
     volumes:
@@ -88,7 +88,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2.G
+          memory: 2G
 
   speakr:
     image: learnedmachine/speakr:lite
