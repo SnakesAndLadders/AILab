@@ -2,15 +2,15 @@ model_list:
   # 1. Primary: Groq Free Tier (Ultra-fast Llama 3.3 70B)
   - model_name: safe-chat-default
     litellm_params:
-      model: groq/llama-3.3-70b-versatile
-      api_key: os.environ/GROQ_API_KEY
+      model: @cf/google/gemma-4-26b-a4b-it
+      api_key: os.environ/CLOUDFLARE_API_KEY
       rpm: 30
       order: 1
 
   # 2. Secondary: Google Gemini Free Tier
   - model_name: safe-chat-default
     litellm_params:
-      model: gemini/gemini-3.8-flash
+      model: gemini/gemini-3.7-flash
       api_key: os.environ/GEMINI_API_KEY
       rpm: 15
       order: 2
@@ -44,8 +44,9 @@ guardrails:
       guardrail: presidio
       mode: ["pre_call", "post_call"]
       default_on: true
+      score_threshold: 0.75
       pii_entities_config:
-        US_SSN: "BLOCK"
+        CA_SIN: "BLOCK"
         AWS_ACCESS_KEY: "BLOCK"
         CREDIT_CARD: "MASK"
         EMAIL_ADDRESS: "MASK"

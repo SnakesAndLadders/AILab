@@ -33,55 +33,112 @@
         - Dockerfile
         - main.py
 
-    - name: Write .env file for Server 2
-      copy:
+        - name: Check if .env already exists on Server 2
+      ansible.builtin.stat:
+        path: "{{ stack_dir }}/.env"
+      register: env_stat
+
+    - name: Read existing .env from Server 2 if present
+      ansible.builtin.slurp:
+        src: "{{ stack_dir }}/.env"
+      register: existing_env_raw
+      when: env_stat.stat.exists
+
+    - name: Parse existing .env key-value pairs
+      ansible.builtin.set_fact:
+        existing_env: >-
+          {{
+            dict(
+              (existing_env_raw.content | b64decode).splitlines()
+              | map('trim')
+
+              | reject('match', '^#|^$')
+              | map('split', '=', 1)
+            )
+            if env_stat.stat.exists else {}
+          }}
+      no_log: true
+
+    - name: Build baseline secrets (preserve existing or auto-generate random 32-char encryption key)
+      ansible.builtin.set_fact:
+        merged_env:
+          OPEN_NOTEBOOK_ENCRYPTION_KEY: "{{ existing_env.OPEN_NOTEBOOK_ENCRYPTION_KEY | default(lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+          SPEAKR_ADMIN_PASS: "{{ existing_env.SPEAKR_ADMIN_PASS | default(lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+          SERVER1_IP: "{{ hostvars['server1']['ansible_host'] }}"
+          SERVER2_LITELLM_KEY: "{{ existing_env.SERVER2_LITELLM_KEY | default('', true) }}"
+          LAN_SUBNET: "{{ existing_env.LAN_SUBNET | default('', true) }}"
+          CLIENT_SUBNET: "{{ existing_env.CLIENT_SUBNET | default('', true) }}"
+      no_log: true
+
+    - name: Prompt interactively for Server 1 IP or Server 2 LiteLLM virtual key if missing
+      ansible.builtin.pause:
+        prompt: "Enter value for {{ item.key }}"
+      register: prompted_inputs
+      loop: "{{ merged_env | dict2items }}"
+      when: item.value | trim | length == 0
+      no_log: true
+
+    - name: Merge prompted values into final .env dictionary
+      ansible.builtin.set_fact:
+        merged_env: "{{ merged_env | combine({item.item.key: item.user_input | trim}) }}"
+      loop: "{{ prompted_inputs.results }}"
+      when: item.user_input is defined
+      no_log: true
+
+    - name: Add derived LITELLM_BASE_URL from SERVER1_IP
+      ansible.builtin.set_fact:
+        merged_env: "{{ merged_env | combine({'LITELLM_BASE_URL': 'http://' + merged_env.SERVER1_IP + ':4000/v1'}) }}"
+      no_log: true
+
+    - name: Write hardened .env file to Server 2
+      ansible.builtin.copy:
         dest: "{{ stack_dir }}/.env"
         mode: "0600"
         content: |
-          SERVER2_LITELLM_KEY={{ server2_litellm_key }}
-          OPEN_NOTEBOOK_ENCRYPTION_KEY={{ open_notebook_encryption_key }}
+          {% for k, v in merged_env.items() %}
+          {{ k }}={{ v }}
+          {% endfor %}
+      no_log: true
 
-    - name: Configure UFW default deny incoming
-      ufw:
-        direction: incoming
-        policy: deny
+    - name: Set UFW default deny incoming / allow outgoing on Server 2
+      community.general.ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: "incoming", policy: "deny" }
+        - { direction: "outgoing", policy: "allow" }
 
-    - name: Allow SSH from LAN subnet
-      ufw:
+    - name: Allow SSH from workstation on Server 2
+      community.general.ufw:
         rule: allow
         port: "22"
-        proto: tcp
-        src: "{{ lan_subnet }}"
+        from_ip: "{{ item }}"
+      loop:
+        - "{{ merged_env.LAN_SUBNET }}"
+        - "{{ merged_env.CLIENT_SUBNET }}"
 
-    - name: Allow SSH from client subnet
-      ufw:
-        rule: allow
-        port: "22"
-        proto: tcp
-        src: "{{ client_subnet }}"
-
-    - name: Allow authorized clients to reach Secure RAG API (Port 8090)
-      ufw:
+    - name: Allow Firewalled RAG API (8090) from Server 1 and workstation
+      community.general.ufw:
         rule: allow
         port: "8090"
         proto: tcp
-        src: "{{ item }}"
+        from_ip: "{{ item }}"
       loop:
-        - "{{ win11_ip }}"
-        - "{{ server1_ip }}"
+        - "{{ merged_env.SERVER1_IP }}"
+        - "{{ merged_env.WORKSTATION_IP }}"
 
-    - name: Allow Windows 11 workstation to reach Open Notebook (8502) and Speakr (8899)
-      ufw:
+    - name: Allow Open Notebook (8502) and Speakr (8899) from workstation only
+      community.general.ufw:
         rule: allow
         port: "{{ item }}"
         proto: tcp
-        src: "{{ win11_ip }}"
+        from_ip: "{{ merged_env.WORKSTATION_IP }}"
       loop:
         - "8502"
         - "8899"
 
-    - name: Enable UFW
-      ufw:
+    - name: Enable UFW on Server 2
+      community.general.ufw:
         state: enabled
 
     - name: Pull pre-built Docker images

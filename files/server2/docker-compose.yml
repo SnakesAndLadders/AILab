@@ -32,7 +32,7 @@ services:
     ports:
       - "8090:8090"
     environment:
-      - LITELLM_BASE_URL=http://192.168.1.10:4000
+      - LITELLM_BASE_URL=${LITELLM_BASE_URL}
       - LITELLM_API_KEY=${SERVER2_LITELLM_KEY}
       - QDRANT_URL=http://qdrant:6333
       - COLLECTION_NAME=lab_knowledge_base
@@ -64,14 +64,14 @@ services:
 
 
   open-notebook:
-    image: lfnovo/open_notebook:latest
+    image: lfnovo/open_notebook:v1-latest
     container_name: open-notebook
     restart: unless-stopped
     ports:
       - "8502:8502"
     environment:
       - OPENAI_API_KEY=${SERVER2_LITELLM_KEY}
-      - OPENAI_BASE_URL=http://192.168.1.10:4000
+      - OPENAI_BASE_URL=${LITELLM_BASE_URL}
       - OPEN_NOTEBOOK_ENCRYPTION_KEY=${OPEN_NOTEBOOK_ENCRYPTION_KEY}
       - SURREAL_URL=ws://surrealdb:8000/rpc
       - SURREAL_USER=root
@@ -99,14 +99,14 @@ services:
     environment:
       - TRANSCRIPTION_CONNECTOR=openai_whisper
       - TRANSCRIPTION_API_KEY=${SERVER2_LITELLM_KEY}
-      - TRANSCRIPTION_BASE_URL=http://192.168.1.10:4000
+      - TRANSCRIPTION_BASE_URL=${LITELLM_BASE_URL}
       - TRANSCRIPTION_MODEL=safe-whisper-default
       - SUMMARIZATION_API_KEY=${SERVER2_LITELLM_KEY}
-      - SUMMARIZATION_BASE_URL=http://192.168.1.10:4000
+      - SUMMARIZATION_BASE_URL=${LITELLM_BASE_URL}
       - SUMMARIZATION_MODEL=safe-chat-default
       - ADMIN_USERNAME=admin
       - ADMIN_EMAIL=admin@example.com
-      - ADMIN_PASSWORD=changeme
+      - ADMIN_PASSWORD=${SPEAKR_ADMIN_PASS}
     volumes:
       - ./speakr_data/uploads:/data/uploads
       - ./speakr_data/instance:/data/instance

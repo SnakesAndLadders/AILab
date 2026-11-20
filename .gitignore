@@ -1,17 +1,20 @@
-# Secrets & Environment Files
+# Auto-generated local inventory and secrets
+inventory.ini
 .env
 *.env
 group_vars/all.yml
 
-# Runtime Docker Volumes & Databases
-**/litellm_data/
-**/qdrant_storage/
-**/notebook_data/
-**/speakr_data/
-*.db
-*.sqlite
+# Ansible retry & temporary files
+*.retry
+.ansible/
 
-# Python & Promptfoo Artifacts
-__pycache__/
-*.pyc
+# Promptfoo evaluation cache & local SQLite logs
 .promptfoo/
+promptfoo-results.json
+
+# Python & OS artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.DS_Store
+Thumbs.db
