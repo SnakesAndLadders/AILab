@@ -69,6 +69,8 @@
           LAN_SUBNET: "{{ existing_env.LAN_SUBNET | default('', true) }}"
           CLIENT_SUBNET: "{{ existing_env.CLIENT_SUBNET | default('', true) }}"
           WORKSTATION_IP: "{{ existing_env.WORKSTATION_IP | default('', true) }}"
+          SERVER2_LITELLM_KEY: "{{ existing_env.SERVER2_LITELLM_KEY | default('PENDING', true) }}"
+          PROMPTFOO_LITELLM_KEY: "{{ existing_env.PROMPTFOO_LITELLM_KEY | default('PENDING', true) }}"
       no_log: true
 
     - name: Prompt interactively for any missing API keys or Server 2 IP
@@ -265,7 +267,8 @@
       command: docker compose up -d --build
       args:
         chdir: "{{ stack_dir }}"
-        
+
+# Key generation   
     - name: Wait for LiteLLM Gateway health check on port 4000
       ansible.builtin.uri:
         url: "http://127.0.0.1:4000"
@@ -289,10 +292,10 @@
           models:
             - "safe-chat-default"
             - "safe-embed-default"
-          max_budget: 0
+          max_budget: 5.0
       register: openclaw_key_resp
       when: existing_env.OPENCLAW_LITELLM_KEY is not defined or (existing_env.OPENCLAW_LITELLM_KEY | trim | length == 0)
-      no_log: false
+      no_log: true
 
     - name: Persist OPENCLAW_LITELLM_KEY into .env and recreate openclaw-agent
       block:
@@ -309,3 +312,64 @@
           args:
             chdir: "{{ stack_dir }}"
       when: openclaw_key_resp is not skipped
+
+    - name: Generate Server 2 virtual key if missing from .env
+      ansible.builtin.uri:
+        
+        url: "http://{{ hostvars['server1']['ansible_host'] }}:4000/key/generate"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ merged_env.LITELLM_MASTER_KEY }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          key_alias: "server2-rag-apps"
+          models:
+            - "safe-chat-default"
+            - "safe-embed-default"
+            - "safe-whisper-default"
+          max_budget: 5.0
+          register: server2_key_resp
+          when: existing_env.SERVER2_LITELLM_KEY is not defined or (existing_env.SERVER2_LITELLM_KEY | trim | length == 0)
+          no_log: true
+
+    - name: Make key available to Server 2 (hostvars['server1']['SERVER2_LITELLM_KEY'])
+      block:
+        - name: Append SERVER2_LITELLM_KEY to .env
+          ansible.builtin.lineinfile:
+            path: "{{ stack_dir }}/.env"
+            regexp: '^SERVER2_LITELLM_KEY='
+            line: "SERVER2_LITELLM_KEY={{ server2_key_resp.json.key }}"
+            mode: "0600"
+          ansible.builtin.set_fact:
+            SERVER2_LITELLM_KEY: "server2_key_resp.json.key"
+          no_log: true
+        - name: Set key in hostvars
+          ansible.builtin.set_fact:
+            SERVER2_LITELLM_KEY: "server2_key_resp.json.key"
+      when: server2_key_resp is not skipped
+    
+    - name: Generate Promptfoo virtual key if missing from .env
+      ansible.builtin.uri:
+        
+        url: "http://{{ hostvars['server1']['ansible_host'] }}:4000/key/generate"
+        method: POST
+        headers:
+          Authorization: "Bearer {{ merged_env.PROMPTFOO_LITELLM_KEY }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          key_alias: "promptfoo-scan-key"
+          models:
+            - "safe-chat-default"
+            - "safe-embed-default"
+            - "safe-whisper-default"
+          max_budget: 5.0
+          register: promptfoo_key_resp
+          when: existing_env.PROMPTFOO_LITELLM_KEY is not defined or (existing_env.PROMPTFOO_LITELLM_KEY | trim | length == 0)
+          no_log: true
+
+    - name: Pause playbook until user presses Enter
+      ansible.builtin.pause:
+        prompt: "Promptfoo API-key={{ server2_key_resp.json.key }}, please copy it and press any key to complete this run"
+      when: promptfoo_key_resp is not skipped

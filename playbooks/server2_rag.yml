@@ -65,7 +65,7 @@
           OPEN_NOTEBOOK_ENCRYPTION_KEY: "{{ existing_env.OPEN_NOTEBOOK_ENCRYPTION_KEY | default(lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
           SPEAKR_ADMIN_PASS: "{{ existing_env.SPEAKR_ADMIN_PASS | default(lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
           SERVER1_IP: "{{ hostvars['server1']['ansible_host'] }}"
-          SERVER2_LITELLM_KEY: "{{ existing_env.SERVER2_LITELLM_KEY | default('', true) }}"
+          SERVER2_LITELLM_KEY: "{{ existing_env.SERVER2_LITELLM_KEY | default('{{ hostvars['server1']['SERVER2_LITELLM_KEY'] }}', true) }}"
           LAN_SUBNET: "{{ existing_env.LAN_SUBNET | default('', true) }}"
           CLIENT_SUBNET: "{{ existing_env.CLIENT_SUBNET | default('', true) }}"
           WORKSTATION_IP: "{{ existing_env.WORKSTATION_IP | default('', true) }}"
@@ -151,3 +151,5 @@
       command: docker compose up -d --build
       args:
         chdir: "{{ stack_dir }}"
+
+

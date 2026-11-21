@@ -158,13 +158,15 @@ This repository uses a self-bootstrapping Ansible workflow—no manual `group_va
 From your Ansible control node (Ubuntu / WSL2 with SSH key access to both Ubuntu servers):
    ```bash
    git clone https://github.com/SnakesAndLadders/AILab.git
-   cd ai-security-ansible
+   cd AILab
+   ansible-playbook -i localhost playbooks/site.yml
    ```
 On the first run, Ansible automatically:
 1. Prompts for **Server 1 IP**, **Server 2 IP**, and your **SSH username**, generating `inventory.ini` (gitignored).
 2. Auto-generates 32-character cryptographic tokens (`LITELLM_MASTER_KEY`, `GUARDRAILS_TOKEN`, `OPENCLAW_GATEWAY_TOKEN`, `LITELLM_DB_PASSWORD`, and `OPEN_NOTEBOOK_ENCRYPTION_KEY`).
 3. Prompts once (with `no_log: true`) for your `WORKSTATION_IP` and free-tier API keys (`GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`), writing hardened `0600` `.env` files directly to each server.
 4. Configures UFW host firewalls, internal Docker networks, Presidio Canadian PII redaction (`CA_SIN`, `CA_POSTAL_CODE`, `AB_PHN`, `AWS_ACCESS_KEY`), and the two-stage Regex + ONNX DeBERTa-v3 prompt-injection shield.
+5. Generates LiteLLM virtual API keys for Openclaw, server2, and the Promptfoo client (and presents the last one so you can copy it) 
 
 *(On subsequent runs, Ansible reads existing `.env` secrets and `inventory.ini` automatically without prompting again, and only restarts containers whose configuration files changed.)*
 
@@ -175,45 +177,16 @@ Run the playbook targeting `security_gateway` first (configures 4 GB swap, disab
 ```bash
 ansible-playbook -i inventory.ini playbooks/site.yml --limit security_gateway --ask-become-pass
 ```
-
 ---
 
-### Step 3: Issue Scoped Virtual API Keys
-Generate isolated, rate-limited virtual keys via LiteLLM's `/key/generate` endpoint:
-
-1. **Key for Server 2 (RAG Embeddings & Workloads):**
-   ```bash
-   curl -X POST 'http://[server1 IP]:4000/key/generate' \
-     -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
-     -H 'Content-Type: application/json' \
-     -d '{"key_alias": "server2-rag-apps", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 30}'
-   ```
-2. **Key for OpenClaw Agent Container (Strict RPM Cap):**
-   ```bash
-   curl -X POST 'http://[server1 IP]:4000/key/generate' \
-     -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
-     -H 'Content-Type: application/json' \
-     -d '{"key_alias": "openclaw-agent", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 10}'
-   ```
-3. **Key for Windows 11 Workstation (OpenCode & Promptfoo):**
-   ```bash
-   curl -X POST 'http://[server1 IP]:4000/key/generate' \
-     -H 'Authorization: Bearer <YOUR_LITELLM_MASTER_KEY>' \
-     -H 'Content-Type: application/json' \
-     -d '{"key_alias": "win11-opencode", "models": ["safe-chat-default", "safe-embed-default"], "rpm_limit": 30}'
-   ```
-4. Paste the generated keys for `server2_litellm_key` and `openclaw_litellm_key` into `group_vars/all.yml`.
-
----
-
-### Step 4: Deploy Server 2 & Apply Virtual Keys Across Both Nodes
+### Step 3: Deploy Server 2 & Apply Virtual Keys Across Both Nodes
 ```bash
 ansible-playbook -i inventory.ini playbooks/site.yml --ask-become-pass
 ```
 
 ---
 
-### Step 5: Run Automated Security & Compliance Checks
+### Step 4: Run Automated Security & Compliance Checks
 Verify UFW rules, swap health, internal container network isolation, `read_only` / `cap_drop: [ALL]` flags, and `safe_ingest.py` injection blocking:
 ```bash
 ansible-playbook -i inventory.ini playbooks/verify_security.yml --ask-become-pass
