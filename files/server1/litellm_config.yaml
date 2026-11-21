@@ -2,7 +2,7 @@ model_list:
   # 1. Primary: Groq Free Tier (Ultra-fast Llama 3.3 70B)
   - model_name: safe-chat-default
     litellm_params:
-      model: @cf/google/gemma-4-26b-a4b-it
+      model: cloudflare/google/gemma-4-26b-a4b-it
       api_key: os.environ/CLOUDFLARE_API_KEY
       rpm: 30
       order: 1
@@ -74,4 +74,5 @@ router_settings:
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  store_model_in_db: false
+  database_url: os.environ/DATABASE_URL
+  store_model_in_db: true

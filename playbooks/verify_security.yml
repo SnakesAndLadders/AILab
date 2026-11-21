@@ -19,7 +19,7 @@
       changed_when: false
       failed_when: >
         'litellm-gateway' not in s1_containers.stdout or
-        'litellm-db' not in s1_containers.stdout or
+        'litellm-postgres' not in s1_containers.stdout or
         'guardrails-server' not in s1_containers.stdout or
         'presidio-analyzer' not in s1_containers.stdout or
         'openclaw-agent' not in s1_containers.stdout
@@ -31,7 +31,7 @@
       changed_when: false
       failed_when: >
         'secure-rag-api' not in s2_containers.stdout or
-        'qdrant-db' not in s2_containers.stdout or
+        'qdrant-vectordb' not in s2_containers.stdout or
         'open-notebook' not in s2_containers.stdout or
         'open-notebook-db' not in s2_containers.stdout or
         'speakr' not in s2_containers.stdout
@@ -58,7 +58,7 @@
       when: inventory_hostname == 'server1'
 
     - name: Verify OpenClaw container cannot reach public internet directly (zero-trust air-gap)
-      ansible.builtin.command: docker exec openclaw-agent python3 -c "import urllib.request; urllib.request.urlopen('https://1.1.1', timeout=3)"
+      ansible.builtin.command: docker exec openclaw-agent python3 -c "import urllib.request; urllib.request.urlopen('https://1.1.1.1', timeout=3)"
       register: egress_check
       changed_when: false
       failed_when: egress_check.rc == 0

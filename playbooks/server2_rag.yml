@@ -33,7 +33,7 @@
         - Dockerfile
         - main.py
 
-        - name: Check if .env already exists on Server 2
+    - name: Check if .env already exists on Server 2
       ansible.builtin.stat:
         path: "{{ stack_dir }}/.env"
       register: env_stat
@@ -68,6 +68,7 @@
           SERVER2_LITELLM_KEY: "{{ existing_env.SERVER2_LITELLM_KEY | default('', true) }}"
           LAN_SUBNET: "{{ existing_env.LAN_SUBNET | default('', true) }}"
           CLIENT_SUBNET: "{{ existing_env.CLIENT_SUBNET | default('', true) }}"
+          WORKSTATION_IP: "{{ existing_env.WORKSTATION_IP | default('', true) }}"
       no_log: true
 
     - name: Prompt interactively for Server 1 IP or Server 2 LiteLLM virtual key if missing

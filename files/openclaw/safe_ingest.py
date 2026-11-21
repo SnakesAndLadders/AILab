@@ -4,12 +4,13 @@ import sys
 import urllib.error
 import urllib.request
 
-LITELLM_URL = os.getenv("OPENAI_BASE_URL", "http://192.168.1.10:4000/v1").replace("/v1", "")
+LITELLM_URL = os.getenv("OPENAI_BASE_URL", "http://litellm:4000/v1").replace("/v1", "")
 LITELLM_KEY = os.getenv("OPENAI_API_KEY", "")
-SECURE_RAG_URL = os.getenv("SECURE_RAG_URL", "http://192.168.1.11:8090")
+SECURE_RAG_IP = os.getenv("SERVER2_IP", "")
+SECURE_RAG_URL = os.getenv("SECURE_RAG_URL", "http://" + SECURE_RAG_IP + ":8090")
 
 
-def post_json(url: str, payload: dict, headers: dict | None = None, timeout: int = 15) -> tuple[int, dict]:
+def post_json(url: str, payload: dict, headers: dict | None = None, timeout: int = 45) -> tuple[int, dict]:
     req_headers = {"Content-Type": "application/json"}
     if headers:
         req_headers.update(headers)
