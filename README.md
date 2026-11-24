@@ -114,6 +114,10 @@ flowchart LR
 
 ## Deployment & Verification Guide
 
+<details>
+
+<summary>Prerequisites</summary>
+
 ### Prerequisites
 * **Control Node:** Linux host or Windows 11 with WSL2 (Ubuntu) running `ansible` (`>= 2.15`) and SSH key-based access to both target laptops.
 * **Target Nodes (Ubuntu Server with Static DHCP IPs):**
@@ -147,6 +151,8 @@ ssh-keygen -t ed25519 -C "ansible-control-node"
 ssh-copy-id [user]@192.168.1.10
 ssh-copy-id [user]@192.168.1.11
 ```
+
+</details>
 
 ---
 
@@ -194,6 +200,70 @@ ansible-playbook -i inventory.ini playbooks/verify_security.yml --ask-become-pas
 You should now have a working deployment.
 
 ---
+
+<details>
+
+<summary>If you would like to change the public LLM Providers</summary>
+
+## Adding or removing models
+This stack comes pre-configured with models but you can change them at any time. There are 2 files to configure.
+1. ./playbooks/server1_gateway.yml
+This section:
+```YAML
+- name: Build baseline secrets (preserve existing or auto-generate random 32-char tokens)
+      ansible.builtin.set_fact:
+        merged_env:
+          LITELLM_MASTER_KEY: "{{ existing_env.LITELLM_MASTER_KEY | default('sk-' + lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+          GUARDRAILS_TOKEN: "{{ existing_env.GUARDRAILS_TOKEN | default(lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+          OPENCLAW_GATEWAY_TOKEN: "{{ existing_env.OPENCLAW_GATEWAY_TOKEN | default(lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+          OPENCLAW_LITELLM_KEY: "{{ existing_env.OPENCLAW_LITELLM_KEY | default('PENDING', true) }}"
+          LITELLM_DB_PASSWORD: "{{ existing_env.LITELLM_DB_PASSWORD | default(lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}"
+          SAMBANOVA_API_KEY: "{{ existing_env.SAMBANOVA_API_KEY | default('', true) }}"
+          CLOUDFLARE_API_KEY: "{{ existing_env.CLOUDFLARE_API_KEY | default('', true) }}"
+          CLOUDFLARE_ACCOUNT_ID:  "{{ existing_env.CLOUDFLARE_ACCOUNT_ID | default('', true) }}"
+          GEMINI_API_KEY: "{{ existing_env.GEMINI_API_KEY | default('', true) }}"
+          OPENROUTER_API_KEY: "{{ existing_env.OPENROUTER_API_KEY | default('', true) }}"
+          SERVER2_IP: "{{ hostvars['server2']['ansible_host'] }}"
+          LAN_SUBNET: "{{ existing_env.LAN_SUBNET | default('', true) }}"
+          CLIENT_SUBNET: "{{ existing_env.CLIENT_SUBNET | default('', true) }}"
+          WORKSTATION_IP: "{{ existing_env.WORKSTATION_IP | default('', true) }}"
+          DISCORD_BOT_ID: "{{ existing_env.DISCORD_BOT_ID | default('', true) }}"
+          DISCORD_SERVER_ID: "{{ existing_env.DISCORD_SERVER_ID | default('', true) }}"
+          DISCORD_OWNER_ID: "{{ existing_env.DISCORD_OWNER_ID | default('', true) }}"
+          FREELLMAPI_API_KEY: "{{ existing_env.FREELLMAPI_API_KEY | default('', true) }}"
+      no_log: true
+```
+
+either stores or generates the keys/settings that your stack uses. To add an existing key (like Groq for exampe) you would add something like ``` GROQ_API_KEY=  "{{ existing_env.GROQ_API_KEY | default('', true) }}" ``` , This will cause your Ansible run to ask for the key if it is not there, and store it in the .env file for that server. After that update the .env section of your docker-compose if required.  
+
+You can also generate API keys/passwords to use in containers like Open Notebook automatically by appending ``` YOUR_NEW_TOKEN: "{{ existing_env.YOUR_NEW_TOKEN | default(lookup('ansible.builtin.password', '/dev/null length=32 chars=ascii_letters,digits'), true) }}" ``` to the end of the list, and the Ansible run will automatically create and store a 32 character password/key for you.
+
+2. ./files/server1/litellm_config.yml 
+
+There are 3 types of models that Litellm offers up in this config. You connect the models that LiteLLM servers to the public LLM models you have an API key for, and LiteLLM will load balance them. When setting up the configuration you need to set an order of preference if you are connecting multiple "outside" models to one "inside" model by making sure the "order: " is set to a unique number. Update, remove, or add sections at the top of the config file:
+```YAML
+- model_name: safe-chat-default
+    litellm_params:
+      model: cloudflare/google/gemma-4-26b-a4b-it
+      api_key: os.environ/CLOUDFLARE_API_KEY
+      rpm: 30
+      order: 1
+```
+Make sure you pay attention to the "safe-chat-default", "safe-embed-default", and "safe-whisper-default" model names so your external calls are routed to the correct "outside" model. THis part can be tricky.  
+
+3. Make sure your file is saved and run your server 1 Ansible playbook to update the settings. 
+```bash
+ansible-playbook -i inventory.ini playbooks/site.yml --limit security_gateway --ask-become-pass
+```
+4. The LiteLLM container should restart, but check it to make sure. If it didn't just manually restart it.
+</details>
+   
+---
+
+<details>
+
+<summary>Run Security Tests</summary>
+
 ## Automated Security Verification & Red-Teaming
 
 ### 1. Infrastructure & Isolation Compliance (`verify_security.yml`)
@@ -250,6 +320,8 @@ promptfoo view
 - Verified Presidio DLP secret blocking
   - Stage 1 Unicode/regex injection defense
   - Stage 2 ONNX DeBERTa semantic detection (`confidence: 1.00`), and Server 2 `/ingest` RAG poisoning rejection.
+
+</details>
 
 ---
 ## Screenshots
